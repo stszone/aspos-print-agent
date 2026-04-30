@@ -1,3 +1,8 @@
+# Agent data files
+*.db
+*.db-shm
+*.db-wal
+
 # Logs
 logs
 *.log

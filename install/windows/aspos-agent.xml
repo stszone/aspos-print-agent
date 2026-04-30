@@ -1,0 +1,45 @@
+<!--
+    ASPOS Print Agent — Windows Service descriptor for WinSW
+    (https://github.com/winsw/winsw)
+
+    Setup:
+        1. Download winsw.exe from https://github.com/winsw/winsw/releases
+        2. Rename to AsposAgent.exe, place next to this file in C:\aspos-agent\
+        3. Edit BACKEND_URL, REVERB_APP_KEY, REVERB_HOST, AGENT_ID, AGENT_TOKEN below
+        4. Run in an admin command prompt:
+               AsposAgent.exe install
+               AsposAgent.exe start
+    Uninstall:
+               AsposAgent.exe stop
+               AsposAgent.exe uninstall
+-->
+<service>
+    <id>AsposAgent</id>
+    <name>ASPOS Print Agent</name>
+    <description>Relays ESC/POS print jobs from ASPOS backend to local printers</description>
+
+    <executable>node</executable>
+    <arguments>src\index.js</arguments>
+    <workingdirectory>C:\aspos-agent</workingdirectory>
+
+    <startmode>Automatic</startmode>
+    <delayedAutoStart>true</delayedAutoStart>
+
+    <env name="BACKEND_URL"     value="https://your-tenant.aspos.io"/>
+    <env name="REVERB_APP_KEY"  value="your_reverb_app_key"/>
+    <env name="REVERB_HOST"     value="your-tenant.aspos.io"/>
+    <env name="REVERB_PORT"     value="443"/>
+    <env name="REVERB_SCHEME"   value="https"/>
+    <env name="AGENT_ID"        value=""/>
+    <env name="AGENT_TOKEN"     value="aspos_agt_replace_me"/>
+    <env name="HEALTH_PORT"     value="8585"/>
+    <env name="LOG_LEVEL"       value="info"/>
+
+    <log mode="append">
+        <logpath>C:\aspos-agent\logs</logpath>
+    </log>
+
+    <onfailure action="restart" delay="5 sec"/>
+    <onfailure action="restart" delay="10 sec"/>
+    <onfailure action="restart" delay="20 sec"/>
+</service>
