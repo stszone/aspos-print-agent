@@ -34,6 +34,7 @@ export class AgentConnection {
 
     connect() {
         if (this._stopped) return;
+        if (this._pusher) return;
 
         logger.info('connection: connecting to Reverb', {
             host: config.reverbHost,
@@ -57,6 +58,7 @@ export class AgentConnection {
         });
 
         this._pusher.connection.bind('connected', () => {
+            if (this._stopped) return;
             logger.info('connection: connected');
             clearTimeout(this._reconnectTimer);
             this._reconnectTimer = null;
@@ -126,6 +128,7 @@ export class AgentConnection {
 
     stop() {
         this._stopped = true;
+        this._connected = false;
         if (this._reconnectTimer) {
             clearTimeout(this._reconnectTimer);
             this._reconnectTimer = null;

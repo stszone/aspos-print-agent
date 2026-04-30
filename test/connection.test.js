@@ -129,13 +129,23 @@ describe('AgentConnection', () => {
         jest.useRealTimers();
     });
 
-    test('stop cancels reconnect', () => {
+    test('stop cancels reconnect and no-ops subsequent events', () => {
         jest.useFakeTimers();
         const conn = new AgentConnection(jest.fn());
         conn.connect();
+        connectionHandlers['connected']?.();
+        expect(conn.isConnected).toBe(true);
         connectionHandlers['disconnected']?.();
         conn.stop();
         expect(conn._reconnectTimer).toBeNull();
+        expect(conn.isConnected).toBe(false);
+
+        // 'connected' fired after stop must not mutate state or call subscribe
+        mockPusher.subscribe.mockClear();
+        connectionHandlers['connected']?.();
+        expect(conn.isConnected).toBe(false);
+        expect(mockPusher.subscribe).not.toHaveBeenCalled();
+
         jest.useRealTimers();
     });
 
