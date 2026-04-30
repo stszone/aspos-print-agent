@@ -1,9 +1,14 @@
 import winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import config from './config.js';
 import fs from 'node:fs';
 
-fs.mkdirSync('./logs', { recursive: true });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const logsDir = path.join(__dirname, '..', 'logs');
+
+fs.mkdirSync(logsDir, { recursive: true });
 
 const logger = winston.createLogger({
     level: config.logLevel,
@@ -20,7 +25,7 @@ const logger = winston.createLogger({
             ),
         }),
         new DailyRotateFile({
-            filename:  './logs/agent-%DATE%.log',
+            filename:  path.join(logsDir, 'agent-%DATE%.log'),
             datePattern: 'YYYY-MM-DD',
             maxFiles:  '30d',
             zippedArchive: true,

@@ -92,6 +92,7 @@ describe('AgentConnection', () => {
         expect(conn.isConnected).toBe(true);
         connectionHandlers['disconnected']?.();
         expect(conn.isConnected).toBe(false);
+        conn.stop(); // cancel pending reconnect timer
     });
 
     test('schedules reconnect on disconnect', () => {
@@ -112,10 +113,15 @@ describe('AgentConnection', () => {
     });
 
     test('backoff doubles up to 60s max', () => {
+        jest.useFakeTimers();
         const conn = new AgentConnection(jest.fn());
         conn.connect();
-        for (let i = 0; i < 10; i++) conn._scheduleReconnect();
+        for (let i = 0; i < 10; i++) {
+            conn._reconnectTimer = null;
+            conn._scheduleReconnect();
+        }
         expect(conn._backoff).toBeLessThanOrEqual(60_000);
+        jest.useRealTimers();
     });
 
     test('stop cancels reconnect', () => {

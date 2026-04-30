@@ -34,7 +34,7 @@ describe('sendToPrinter', () => {
     });
 
     test('rejects on connection refused', async () => {
-        server.close();
+        await new Promise(resolve => server.close(resolve));
         await expect(sendToPrinter('127.0.0.1', port, Buffer.from([0x42])))
             .rejects.toThrow();
     });

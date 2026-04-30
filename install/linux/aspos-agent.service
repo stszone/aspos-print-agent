@@ -15,7 +15,7 @@ RestartSec=5s
 StandardOutput=append:/opt/aspos-agent/logs/agent.log
 StandardError=append:/opt/aspos-agent/logs/agent.log
 EnvironmentFile=/opt/aspos-agent/.env
-ExecStartPre=/usr/bin/mkdir -p /opt/aspos-agent/logs
+ExecStartPre=+/usr/bin/mkdir -p /opt/aspos-agent/logs
 
 [Install]
 WantedBy=multi-user.target

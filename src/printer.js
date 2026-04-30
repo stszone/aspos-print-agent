@@ -29,9 +29,12 @@ export function sendToPrinter(host, port, bytes) {
             settled = true;
             clearTimeout(connectTimer);
             clearTimeout(writeTimer);
-            socket.destroy();
-            if (err) reject(err);
-            else resolve();
+            if (err) {
+                socket.destroy();
+                reject(err);
+            } else {
+                resolve();
+            }
         }
 
         connectTimer = setTimeout(
@@ -53,7 +56,7 @@ export function sendToPrinter(host, port, bytes) {
                     settle(err);
                 } else {
                     socket.end();
-                    settle(null);
+                    socket.on('close', () => settle(null));
                 }
             });
         });

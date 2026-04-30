@@ -6,14 +6,22 @@ function required(name) {
     return value;
 }
 
+function parseEnvInt(name, rawValue) {
+    const n = parseInt(rawValue, 10);
+    if (!Number.isInteger(n)) {
+        throw new Error(`Env var ${name} must be an integer, got: ${JSON.stringify(rawValue)}`);
+    }
+    return n;
+}
+
 export default {
-    backendUrl:  required('BACKEND_URL').replace(/\/$/, ''),
+    backendUrl:   required('BACKEND_URL').replace(/\/$/, ''),
     reverbAppKey: required('REVERB_APP_KEY'),
-    reverbHost:  required('REVERB_HOST'),
-    reverbPort:  parseInt(process.env.REVERB_PORT ?? '443', 10),
+    reverbHost:   required('REVERB_HOST'),
+    reverbPort:   parseEnvInt('REVERB_PORT',  process.env.REVERB_PORT  ?? '443'),
     reverbScheme: process.env.REVERB_SCHEME ?? 'https',
-    agentId:     parseInt(required('AGENT_ID'), 10),
-    agentToken:  required('AGENT_TOKEN'),
-    healthPort:  parseInt(process.env.HEALTH_PORT ?? '8585', 10),
-    logLevel:    process.env.LOG_LEVEL ?? 'info',
+    agentId:      parseEnvInt('AGENT_ID',     required('AGENT_ID')),
+    agentToken:   required('AGENT_TOKEN'),
+    healthPort:   parseEnvInt('HEALTH_PORT',  process.env.HEALTH_PORT  ?? '8585'),
+    logLevel:     process.env.LOG_LEVEL ?? 'info',
 };

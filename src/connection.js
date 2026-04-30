@@ -58,6 +58,8 @@ export class AgentConnection {
 
         this._pusher.connection.bind('connected', () => {
             logger.info('connection: connected');
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
             this._connected = true;
             this._backoff = MIN_BACKOFF_MS;
             this._subscribe();
@@ -78,6 +80,7 @@ export class AgentConnection {
 
     _subscribe() {
         const channelName = `private-aspos.agents.${config.agentId}`;
+        this._channel?.unbind_all?.();
         this._channel = this._pusher.subscribe(channelName);
 
         this._channel.bind('pusher:subscription_error', (status) => {

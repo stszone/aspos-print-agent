@@ -9,8 +9,20 @@
 import config from './config.js';
 import logger from './logger.js';
 
+const BACKEND_TIMEOUT_MS = 10_000;
+
 function authHeader() {
     return `Bearer ${config.agentToken}`;
+}
+
+async function fetchWithTimeout(url, options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 /**
@@ -26,7 +38,7 @@ export async function channelAuth(socketId, channelName) {
 
     const body = new URLSearchParams({ socket_id: socketId, channel_name: channelName });
 
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
             'Authorization': authHeader(),
@@ -57,7 +69,7 @@ export async function reportResult(jobId, status, error = null) {
     const payload = { job_id: jobId, status };
     if (error) payload.error = String(error).slice(0, 500);
 
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
             'Authorization': authHeader(),

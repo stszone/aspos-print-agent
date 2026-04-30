@@ -30,14 +30,13 @@ export async function processJob(job) {
         return false;
     }
 
-    let bytes;
-    try {
-        bytes = Buffer.from(payload_b64, 'base64');
-    } catch (err) {
-        logger.error('worker: invalid base64 payload', { job_id, err: err.message });
+    if (!payload_b64 || !/^[A-Za-z0-9+/]+=*$/.test(payload_b64)) {
+        logger.error('worker: invalid base64 payload', { job_id, err: 'invalid base64' });
         await reportResult(job_id, 'fail', 'Invalid base64 payload');
         return false;
     }
+
+    const bytes = Buffer.from(payload_b64, 'base64');
 
     try {
         await sendToPrinter(connection.host, connection.port, bytes);

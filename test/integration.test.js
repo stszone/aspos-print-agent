@@ -92,7 +92,7 @@ describe('integration: processJob', () => {
     });
 
     test('failed job: result reported fail on TCP error', async () => {
-        server.close();
+        await new Promise(resolve => server.close(resolve));
         const job = makeJob();
         const ok = await processJob(job);
 

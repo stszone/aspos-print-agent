@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
+User=aspos-agent
 WorkingDirectory=/opt/aspos-agent
 ExecStart=/usr/bin/node src/index.js
 Restart=on-failure

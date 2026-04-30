@@ -55,17 +55,24 @@ async function retryBufferedJobs() {
     }
 }
 
-const retryInterval = setInterval(retryBufferedJobs, 30_000);
+const retryInterval = setInterval(() => {
+    retryBufferedJobs().catch(err => logger.error('retry: unhandled error', { err: err.message }));
+}, 30_000);
 
 async function shutdown(signal) {
     logger.info(`shutdown: received ${signal}`);
     clearInterval(retryInterval);
     connection.stop();
     buffer.close();
-    process.exit(0);
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGTERM', async () => {
+    try { await shutdown('SIGTERM'); process.exit(0); }
+    catch (err) { logger.error('shutdown error', { err: err.message }); process.exit(1); }
+});
+process.on('SIGINT', async () => {
+    try { await shutdown('SIGINT'); process.exit(0); }
+    catch (err) { logger.error('shutdown error', { err: err.message }); process.exit(1); }
+});
 
 logger.info('agent: started', { agent_id: config.agentId, backend: config.backendUrl });
