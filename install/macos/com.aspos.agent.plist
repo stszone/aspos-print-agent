@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    ASPOS Print Agent — macOS launchd plist
+    Install:
+        sudo cp com.aspos.agent.plist /Library/LaunchDaemons/
+        sudo launchctl load /Library/LaunchDaemons/com.aspos.agent.plist
+    Uninstall:
+        sudo launchctl unload /Library/LaunchDaemons/com.aspos.agent.plist
+        sudo rm /Library/LaunchDaemons/com.aspos.agent.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aspos.agent</string>
+
+    <!--
+        Node.js path differs by architecture:
+          Apple Silicon: /opt/homebrew/bin/node
+          Intel:         /usr/local/bin/node
+        Verify with: ls -la $(which node)
+        Or create a symlink: sudo ln -sf $(which node) /usr/local/bin/node
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>/opt/aspos-agent/src/index.js</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/opt/aspos-agent</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Values are read from .env by dotenv at runtime. -->
+        <key>NODE_ENV</key>
+        <string>production</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>ThrottleInterval</key>
+        <integer>10</integer>
+    </dict>
+
+    <!--
+        Run as a low-privilege user. Create with:
+            sudo dscl . -create /Users/aspos-agent
+            sudo dscl . -create /Users/aspos-agent UserShell /usr/bin/false
+            sudo dscl . -create /Users/aspos-agent UniqueID 502
+            sudo dscl . -create /Users/aspos-agent PrimaryGroupID 20
+    -->
+    <key>UserName</key>
+    <string>aspos-agent</string>
+
+    <key>StandardOutPath</key>
+    <string>/opt/aspos-agent/logs/agent.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/opt/aspos-agent/logs/agent.log</string>
+</dict>
+</plist>

@@ -1,0 +1,32 @@
+{
+  "name": "aspos-print-agent",
+  "version": "1.0.0",
+  "description": "ASPOS Print Agent — relays ESC/POS print jobs from ASPOS backend to local printers",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --detectOpenHandles",
+    "test:ci": "node --experimental-vm-modules node_modules/.bin/jest --forceExit",
+    "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch",
+    "lint": "eslint src test"
+  },
+  "keywords": ["aspos", "print", "escpos", "pos"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "dotenv": "^16.4.5",
+    "laravel-echo": "^1.16.1",
+    "pusher-js": "^8.4.0",
+    "winston": "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "ws": "^8.17.0"
+  }
+}

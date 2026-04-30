@@ -1,0 +1,21 @@
+[Unit]
+Description=ASPOS Print Agent
+Documentation=https://github.com/stszone/aspos-print-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Change to the user running the agent on your system
+User=aspos
+WorkingDirectory=/opt/aspos-agent
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/opt/aspos-agent/logs/agent.log
+StandardError=append:/opt/aspos-agent/logs/agent.log
+EnvironmentFile=/opt/aspos-agent/.env
+ExecStartPre=+/usr/bin/mkdir -p /opt/aspos-agent/logs
+
+[Install]
+WantedBy=multi-user.target
