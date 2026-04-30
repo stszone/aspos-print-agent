@@ -69,20 +69,24 @@ export async function reportResult(jobId, status, error = null) {
     const payload = { job_id: jobId, status };
     if (error) payload.error = String(error).slice(0, 500);
 
-    const res = await fetchWithTimeout(url, {
-        method: 'POST',
-        headers: {
-            'Authorization': authHeader(),
-            'Content-Type':  'application/json',
-            'Accept':        'application/json',
-        },
-        body: JSON.stringify(payload),
-    });
+    try {
+        const res = await fetchWithTimeout(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': authHeader(),
+                'Content-Type':  'application/json',
+                'Accept':        'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
 
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        logger.warn('backend: result report failed', { job_id: jobId, status: res.status, body: text });
-    } else {
-        logger.info('backend: result reported', { job_id: jobId, status });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            logger.warn('backend: result report failed', { job_id: jobId, status: res.status, body: text });
+        } else {
+            logger.info('backend: result reported', { job_id: jobId, status });
+        }
+    } catch (err) {
+        logger.warn('backend: result report transport error', { job_id: jobId, status, err: err.message });
     }
 }

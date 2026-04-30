@@ -116,11 +116,16 @@ describe('AgentConnection', () => {
         jest.useFakeTimers();
         const conn = new AgentConnection(jest.fn());
         conn.connect();
+        connectionHandlers['connected']?.();
+
         for (let i = 0; i < 10; i++) {
-            conn._reconnectTimer = null;
-            conn._scheduleReconnect();
+            const delay = conn._backoff;
+            connectionHandlers['disconnected']?.();
+            jest.advanceTimersByTime(delay + 10);
         }
+
         expect(conn._backoff).toBeLessThanOrEqual(60_000);
+        conn.stop();
         jest.useRealTimers();
     });
 

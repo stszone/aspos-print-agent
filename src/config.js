@@ -7,7 +7,11 @@ function required(name) {
 }
 
 function parseEnvInt(name, rawValue) {
-    const n = parseInt(rawValue, 10);
+    const trimmed = (rawValue ?? '').trim();
+    if (!/^[+-]?\d+$/.test(trimmed)) {
+        throw new Error(`Env var ${name} must be an integer, got: ${JSON.stringify(rawValue)}`);
+    }
+    const n = Number(trimmed);
     if (!Number.isInteger(n)) {
         throw new Error(`Env var ${name} must be an integer, got: ${JSON.stringify(rawValue)}`);
     }

@@ -94,7 +94,7 @@ export class AgentConnection {
         // PrintJobReady events broadcast by DispatchPrintJob
         this._channel.bind('App\\Events\\PrintJobReady', (data) => {
             logger.info('connection: received PrintJobReady', { job_id: data?.job_id });
-            this._onJob(data).catch(err =>
+            Promise.resolve(this._onJob(data)).catch(err =>
                 logger.error('connection: job handler threw', { err: err.message }),
             );
         });

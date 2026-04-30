@@ -30,13 +30,22 @@ export async function processJob(job) {
         return false;
     }
 
-    if (!payload_b64 || !/^[A-Za-z0-9+/]+=*$/.test(payload_b64)) {
-        logger.error('worker: invalid base64 payload', { job_id, err: 'invalid base64' });
+    let bytes;
+    try {
+        if (!payload_b64 ||
+            payload_b64.length % 4 !== 0 ||
+            !/^[A-Za-z0-9+/]*={0,2}$/.test(payload_b64)) {
+            throw new Error('invalid base64 format');
+        }
+        bytes = Buffer.from(payload_b64, 'base64');
+        if (bytes.toString('base64') !== payload_b64) {
+            throw new Error('base64 round-trip mismatch');
+        }
+    } catch (err) {
+        logger.error('worker: invalid base64 payload', { job_id, err: err.message });
         await reportResult(job_id, 'fail', 'Invalid base64 payload');
         return false;
     }
-
-    const bytes = Buffer.from(payload_b64, 'base64');
 
     try {
         await sendToPrinter(connection.host, connection.port, bytes);

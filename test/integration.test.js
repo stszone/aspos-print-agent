@@ -113,8 +113,7 @@ describe('integration: processJob', () => {
         buffer.enqueue(job);
 
         // Simulate failure by closing server before processing
-        server.close();
-        await new Promise(r => setTimeout(r, 20));
+        await new Promise(resolve => server.close(resolve));
 
         const ok1 = await processJob(job);
         expect(ok1).toBe(false);
