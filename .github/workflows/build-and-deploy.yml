@@ -38,6 +38,7 @@ jobs:
   deploy:
     name: Deploy to AS POS APP SERVER
     needs: test
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-${{ github.ref }}
