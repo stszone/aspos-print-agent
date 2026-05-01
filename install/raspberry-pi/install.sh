@@ -30,7 +30,7 @@ die()  { echo "[aspos-install] ERROR: $*" >&2; exit 1; }
 # ── 0. Validate ───────────────────────────────────────────────────────────────
 [ -n "$AGENT_TOKEN" ] || die "AGENT_TOKEN is required (arg 1)."
 [ -n "$AGENT_ID" ]    || die "AGENT_ID is required (arg 2)."
-[[ "$AGENT_ID" =~ ^[0-9]+$ ]] || die "AGENT_ID must be a positive integer, got: '${AGENT_ID}'."
+[[ "$AGENT_ID" =~ ^[1-9][0-9]*$ ]] || die "AGENT_ID must be a positive integer, got: '${AGENT_ID}'."
 [ -n "$REVERB_APP_KEY" ] || die "REVERB_APP_KEY is required (arg 4)."
 [ "$(id -u)" -eq 0 ]  || die "Run as root: sudo bash install.sh ..."
 
@@ -57,6 +57,7 @@ if ! id "$SERVICE_USER" &>/dev/null; then
 fi
 
 # ── 3. Clone / update agent code ─────────────────────────────────────────────
+command -v git &>/dev/null || die "git is not installed. Install it (apt-get install git) and re-run."
 if [ -d "$INSTALL_DIR/.git" ]; then
     log "Updating existing installation..."
     git -C "$INSTALL_DIR" pull --ff-only
@@ -90,6 +91,7 @@ mv "$TMPENV" "$INSTALL_DIR/.env"
 
 # ── 5. systemd service ────────────────────────────────────────────────────────
 cp "$INSTALL_DIR/install/raspberry-pi/aspos-agent.service" "$SERVICE_FILE"
+sed -i "s/^User=.*/User=${SERVICE_USER}/" "$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable aspos-agent
 systemctl restart aspos-agent
