@@ -1,8 +1,4 @@
-# Reference copy of the GitHub Actions workflow for the aspos-print-agent repository.
-# The live file lives at: .github/workflows/build-and-deploy.yml in aspos-print-agent.
-# Keep this copy in sync with any changes made to that file.
-
-name: Build and Deploy Print Agent
+name: Deploy Install Scripts
 
 on:
   push:
@@ -11,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -38,167 +33,12 @@ jobs:
         run: npm test
 
   # ---------------------------------------------------------------------------
-  # Job 2: Build binaries (matrix per platform)
-  # ---------------------------------------------------------------------------
-  build:
-    name: Build — ${{ matrix.platform }}-${{ matrix.arch }}
-    needs: test
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux
-            arch: x64
-            os: ubuntu-latest
-            pkg_target: node20-linux-x64
-            artifact_ext: tar.gz
-          - platform: linux
-            arch: arm64
-            os: ubuntu-latest
-            pkg_target: node20-linux-arm64
-            artifact_ext: tar.gz
-          - platform: macos
-            arch: x64
-            os: macos-13
-            pkg_target: node20-macos-x64
-            artifact_ext: tar.gz
-          - platform: macos
-            arch: arm64
-            os: macos-14
-            pkg_target: node20-macos-arm64
-            artifact_ext: tar.gz
-          - platform: windows
-            arch: x64
-            os: windows-latest
-            pkg_target: node20-win-x64
-            artifact_ext: exe
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install pkg
-        run: npm install -g pkg
-
-      - name: Read version
-        id: version
-        shell: bash
-        run: |
-          VERSION=$(node -e "console.log(require('./package.json').version)")
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      # Build binary — Linux / macOS
-      - name: Build binary (Linux / macOS)
-        if: matrix.platform != 'windows'
-        run: |
-          mkdir -p dist
-          pkg . \
-            --target ${{ matrix.pkg_target }} \
-            --output dist/aspos-agent-${{ matrix.platform }}-${{ matrix.arch }}-${VERSION}
-
-      # Build binary — Windows (.exe)
-      - name: Build binary (Windows)
-        if: matrix.platform == 'windows'
-        shell: bash
-        run: |
-          mkdir -p dist
-          pkg . \
-            --target ${{ matrix.pkg_target }} \
-            --output dist/aspos-agent-${{ matrix.platform }}-${{ matrix.arch }}-${VERSION}.exe
-
-      # Build NSIS installer — Windows only
-      - name: Build Windows installer (NSIS)
-        if: matrix.platform == 'windows'
-        shell: bash
-        run: |
-          # Expects an installer.nsi script at the repo root.
-          # Adjust the NSIS script to embed dist/aspos-agent-windows-x64-${VERSION}.exe
-          # and produce dist/aspos-agent-setup-${VERSION}.exe.
-          choco install nsis --no-progress -y
-          VERSION_VAR="/DAPP_VERSION=${VERSION}"
-          makensis ${VERSION_VAR} installer.nsi
-          # Installer script should output to: dist/aspos-agent-setup-${VERSION}.exe
-
-      # Package binary into tar.gz — Linux / macOS
-      - name: Package binary into tar.gz (Linux / macOS)
-        if: matrix.platform != 'windows'
-        run: |
-          cd dist
-          BINARY="aspos-agent-${{ matrix.platform }}-${{ matrix.arch }}-${VERSION}"
-          tar -czf "${BINARY}.tar.gz" "${BINARY}"
-          rm "${BINARY}"
-
-      # Compute SHA256 — Linux / macOS
-      - name: Compute SHA256 (Linux / macOS)
-        if: matrix.platform != 'windows'
-        run: |
-          cd dist
-          for f in *.tar.gz; do
-            sha256sum "$f" > "${f}.sha256"
-          done
-
-      # Compute SHA256 — Windows
-      - name: Compute SHA256 (Windows)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          cd dist
-          Get-ChildItem -Filter "*.exe" | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)" | Out-File -FilePath "$($_.FullName).sha256" -Encoding ascii
-          }
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-${{ matrix.platform }}-${{ matrix.arch }}
-          path: dist/
-          retention-days: 7
-
-  # ---------------------------------------------------------------------------
-  # Job 3: Package install scripts
-  # ---------------------------------------------------------------------------
-  package-scripts:
-    name: Package Install Scripts
-    needs: test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Stage install scripts
-        run: |
-          mkdir -p scripts
-          cp install/pi.sh     scripts/pi.sh
-          cp install/linux.sh  scripts/linux.sh
-          cp install/macos.sh  scripts/macos.sh
-
-      - name: Upload scripts artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: install-scripts
-          path: scripts/
-          retention-days: 7
-
-  # ---------------------------------------------------------------------------
-  # Job 4: Deploy to AS POS APP SERVER
+  # Job 2: Deploy to AS POS APP SERVER
   # ---------------------------------------------------------------------------
   deploy:
     name: Deploy to AS POS APP SERVER
-    needs: [build, package-scripts]
+    needs: test
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-${{ github.ref }}
@@ -208,30 +48,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: build-*
-          path: dist/
-          merge-multiple: true
-
-      - name: Download install scripts artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: install-scripts
-          path: dist/
+      - name: Install jq
+        run: sudo apt-get install -y jq
 
       - name: Read version
-        id: version
         run: |
-          VERSION=$(node -e "console.log(require('./package.json').version)")
+          VERSION=$(jq -r .version package.json)
+          [ -n "$VERSION" ] && [ "$VERSION" != "null" ] || { echo "ERROR: could not read version from package.json"; exit 1; }
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Stage install scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/linux dist/macos dist/raspberry-pi dist/windows
+          cp install/linux/install.sh        dist/linux/install.sh
+          cp install/macos/install.sh        dist/macos/install.sh
+          cp install/raspberry-pi/install.sh dist/raspberry-pi/install.sh
+          cp install/windows/install.ps1     dist/windows/install.ps1
+
+      - name: Write latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          BASE_URL="https://aspos.io/install/agent"
+          jq -n \
+            --arg version    "$VERSION" \
+            --arg released_at "$RELEASED_AT" \
+            --arg base_url   "$BASE_URL" \
+            '{
+              version:     $version,
+              released_at: $released_at,
+              scripts: {
+                "linux":        "\($base_url)/linux/install.sh",
+                "macos":        "\($base_url)/macos/install.sh",
+                "raspberry-pi": "\($base_url)/raspberry-pi/install.sh",
+                "windows":      "\($base_url)/windows/install.ps1"
+              }
+            }' > dist/latest.json
 
       - name: Setup SSH
         run: |
@@ -242,97 +97,12 @@ jobs:
           echo "${{ secrets.KNOWN_HOST_KEY }}" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Upload artifacts via rsync
+      - name: Upload via rsync
         run: |
-          rsync -avz \
+          rsync -avz --delete \
             -e "ssh -i ~/.ssh/deploy_key -p 22 -o StrictHostKeyChecking=yes" \
             ./dist/ \
             ${{ secrets.ASPOS_APPS_USER }}@${{ secrets.ASPOS_APPS_HOST }}:${{ secrets.ASPOS_APPS_PATH }}/
-
-      - name: Write and upload latest.json
-        run: |
-          RELEASED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          BASE_URL="https://aspos.io/install/agent"
-
-          # Helper: read sha256 from .sha256 sidecar file (first field)
-          get_sha256() {
-            local file="$1"
-            if [ -f "dist/${file}.sha256" ]; then
-              awk '{print $1}' "dist/${file}.sha256"
-            else
-              echo "ERROR: missing checksum file dist/${file}.sha256" >&2
-              exit 1
-            fi
-          }
-
-          # Helper: get file size in bytes
-          get_size() {
-            local file="$1"
-            if [ -f "dist/${file}" ]; then
-              stat -c%s "dist/${file}"
-            else
-              echo "ERROR: missing artifact file dist/${file}" >&2
-              exit 1
-            fi
-          }
-
-          # Artifact filenames
-          LINUX_X64="aspos-agent-linux-x64-${VERSION}.tar.gz"
-          LINUX_ARM64="aspos-agent-linux-arm64-${VERSION}.tar.gz"
-          MACOS_X64="aspos-agent-macos-x64-${VERSION}.tar.gz"
-          MACOS_ARM64="aspos-agent-macos-arm64-${VERSION}.tar.gz"
-          WIN_X64="aspos-agent-windows-x64-${VERSION}.exe"
-          WIN_SETUP="aspos-agent-setup-${VERSION}.exe"
-
-          cat > dist/latest.json <<EOF
-          {
-            "version": "${VERSION}",
-            "released_at": "${RELEASED_AT}",
-            "artifacts": {
-              "linux-x64": {
-                "url": "${BASE_URL}/${LINUX_X64}",
-                "sha256": "$(get_sha256 ${LINUX_X64})",
-                "size_bytes": $(get_size ${LINUX_X64})
-              },
-              "linux-arm64": {
-                "url": "${BASE_URL}/${LINUX_ARM64}",
-                "sha256": "$(get_sha256 ${LINUX_ARM64})",
-                "size_bytes": $(get_size ${LINUX_ARM64})
-              },
-              "macos-x64": {
-                "url": "${BASE_URL}/${MACOS_X64}",
-                "sha256": "$(get_sha256 ${MACOS_X64})",
-                "size_bytes": $(get_size ${MACOS_X64})
-              },
-              "macos-arm64": {
-                "url": "${BASE_URL}/${MACOS_ARM64}",
-                "sha256": "$(get_sha256 ${MACOS_ARM64})",
-                "size_bytes": $(get_size ${MACOS_ARM64})
-              },
-              "windows-x64": {
-                "url": "${BASE_URL}/${WIN_X64}",
-                "sha256": "$(get_sha256 ${WIN_X64})",
-                "size_bytes": $(get_size ${WIN_X64})
-              },
-              "windows-x64-installer": {
-                "url": "${BASE_URL}/${WIN_SETUP}",
-                "sha256": "$(get_sha256 ${WIN_SETUP})",
-                "size_bytes": $(get_size ${WIN_SETUP})
-              }
-            },
-            "scripts": {
-              "pi": "${BASE_URL}/pi.sh",
-              "linux": "${BASE_URL}/linux.sh",
-              "macos": "${BASE_URL}/macos.sh"
-            }
-          }
-          EOF
-
-          # Upload latest.json (overwrites existing)
-          rsync -avz \
-            -e "ssh -i ~/.ssh/deploy_key -p 22 -o StrictHostKeyChecking=yes" \
-            dist/latest.json \
-            ${{ secrets.ASPOS_APPS_USER }}@${{ secrets.ASPOS_APPS_HOST }}:${{ secrets.ASPOS_APPS_PATH }}/latest.json
 
       - name: Cleanup SSH key
         if: always()
