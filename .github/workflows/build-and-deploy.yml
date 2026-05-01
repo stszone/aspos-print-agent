@@ -68,7 +68,9 @@ jobs:
           cp install/windows/install.ps1     dist/windows/install.ps1
 
       - name: Write latest.json
+        shell: bash
         run: |
+          set -euo pipefail
           RELEASED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           BASE_URL="https://aspos.io/install/agent"
           jq -n \
