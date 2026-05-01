@@ -14,11 +14,14 @@ function Install-AsposAgent {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
         [string]$Token,
 
         [Parameter(Mandatory=$true)]
+        [ValidateRange(1, [int]::MaxValue)]
         [int]$AgentId,
 
+        [ValidateNotNullOrEmpty()]
         [string]$BackendUrl    = "https://aspos.io",
         [string]$ReverbAppKey  = "",
         [string]$ReverbHost    = "",
@@ -29,7 +32,7 @@ function Install-AsposAgent {
     $ErrorActionPreference = "Stop"
 
     $InstallDir  = "C:\Program Files\ASPOS Agent"
-    $WinswUrl    = "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe"
+    $WinswUrl    = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe"
     $WinswExe    = Join-Path $InstallDir "AsposAgent.exe"
     $ServiceXml  = Join-Path $InstallDir "AsposAgent.xml"
     $EnvFile     = Join-Path $InstallDir ".env"
@@ -42,6 +45,10 @@ function Install-AsposAgent {
     # Validate required parameters
     if ([string]::IsNullOrEmpty($ReverbAppKey)) {
         throw "[aspos-install] ERROR: -ReverbAppKey is required. Obtain it from your ASPOS dashboard."
+    }
+    $uri = $null
+    if (-not [Uri]::TryCreate($BackendUrl, [UriKind]::Absolute, [ref]$uri)) {
+        throw "[aspos-install] ERROR: -BackendUrl '$BackendUrl' is not a valid absolute URI."
     }
 
     # Derive REVERB_HOST from BackendUrl if not supplied
@@ -61,6 +68,7 @@ function Install-AsposAgent {
         Write-Log "Node.js ${NodeMinVer}+ not found. Installing via winget..."
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             winget install --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
+            if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: winget failed (exit $LASTEXITCODE)." }
         } else {
             # Fallback: download the MSI directly
             Write-Log "winget not available — downloading Node.js MSI..."
@@ -71,8 +79,9 @@ function Install-AsposAgent {
             $msiUrl = "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-x64.msi"
             $msiPath = Join-Path $env:TEMP "nodejs.msi"
             Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
-            Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn" -Wait
+            $proc = Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn" -Wait -PassThru
             Remove-Item $msiPath -Force
+            if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
         }
         # Refresh PATH
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
@@ -94,12 +103,15 @@ function Install-AsposAgent {
     if (Test-Path (Join-Path $InstallDir ".git")) {
         Write-Log "Updating existing installation..."
         git -C $InstallDir pull --ff-only
+        if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git pull' failed (exit $LASTEXITCODE)." }
     } else {
         Write-Log "Cloning ASPOS Print Agent to $InstallDir..."
         git clone https://github.com/stszone/aspos-print-agent.git $InstallDir
+        if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git clone' failed (exit $LASTEXITCODE)." }
     }
     Set-Location $InstallDir
     npm ci --omit=dev
+    if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'npm ci' failed (exit $LASTEXITCODE)." }
 
     # ── 4. .env ───────────────────────────────────────────────────────────────
     Write-Log "Writing .env..."
@@ -144,13 +156,16 @@ LOG_LEVEL=info
     # Stop and uninstall existing service before re-installing (idempotent)
     if (Get-Service -Name "AsposAgent" -ErrorAction SilentlyContinue) {
         Write-Log "Removing existing service..."
-        & $WinswExe stop  2>$null
+        & $WinswExe stop 2>$null  # ignore — service may already be stopped
         & $WinswExe uninstall
+        if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: WinSW uninstall failed (exit $LASTEXITCODE)." }
     }
 
     Write-Log "Installing Windows service..."
     & $WinswExe install
+    if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: WinSW install failed (exit $LASTEXITCODE)." }
     & $WinswExe start
+    if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: WinSW start failed (exit $LASTEXITCODE)." }
 
     # ── 6. Health check ───────────────────────────────────────────────────────
     Write-Log "Waiting for health check..."
