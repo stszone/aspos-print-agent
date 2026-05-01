@@ -59,7 +59,11 @@ function Install-AsposAgent {
         } else {
             # Fallback: download the MSI directly
             Write-Log "winget not available — downloading Node.js MSI..."
-            $msiUrl = "https://nodejs.org/dist/latest-v${NodeMinVer}.x/node-v${NodeMinVer}.99.0-x64.msi"
+            $nodeIndex = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing
+            $nodeEntry = $nodeIndex | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $NodeMinVer } | Select-Object -First 1
+            if (-not $nodeEntry) { throw "Could not find Node.js v${NodeMinVer}.x in distribution index." }
+            $nodeVersion = $nodeEntry.version
+            $msiUrl = "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-x64.msi"
             $msiPath = Join-Path $env:TEMP "nodejs.msi"
             Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
             Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn" -Wait
@@ -120,9 +124,14 @@ LOG_LEVEL=info
         Invoke-WebRequest -Uri $WinswUrl -OutFile $WinswExe -UseBasicParsing
     }
 
-    # Copy service descriptor XML (env vars are loaded from .env by Node dotenv)
+    # Copy service descriptor XML and patch it with actual install paths
     $srcXml = Join-Path $InstallDir "install\windows\aspos-agent.xml"
     Copy-Item $srcXml $ServiceXml -Force
+    $xml = [xml](Get-Content $ServiceXml -Raw)
+    $xml.service.workingdirectory = $InstallDir
+    $xml.service.log.logpath = $LogDir
+    foreach ($node in @($xml.service.SelectNodes("env"))) { $xml.service.RemoveChild($node) | Out-Null }
+    $xml.Save($ServiceXml)
 
     # Stop and uninstall existing service before re-installing (idempotent)
     if (Get-Service -Name "AsposAgent" -ErrorAction SilentlyContinue) {
