@@ -48,13 +48,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Read version
         run: |
           VERSION=$(jq -r .version package.json)
+          [ -n "$VERSION" ] && [ "$VERSION" != "null" ] || { echo "ERROR: could not read version from package.json"; exit 1; }
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Stage install scripts
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist/linux dist/macos dist/raspberry-pi dist/windows
           cp install/linux/install.sh        dist/linux/install.sh
           cp install/macos/install.sh        dist/macos/install.sh
@@ -65,18 +71,20 @@ jobs:
         run: |
           RELEASED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           BASE_URL="https://aspos.io/install/agent"
-          cat > dist/latest.json <<EOF
-          {
-            "version": "${VERSION}",
-            "released_at": "${RELEASED_AT}",
-            "scripts": {
-              "linux":        "${BASE_URL}/linux/install.sh",
-              "macos":        "${BASE_URL}/macos/install.sh",
-              "raspberry-pi": "${BASE_URL}/raspberry-pi/install.sh",
-              "windows":      "${BASE_URL}/windows/install.ps1"
-            }
-          }
-          EOF
+          jq -n \
+            --arg version    "$VERSION" \
+            --arg released_at "$RELEASED_AT" \
+            --arg base_url   "$BASE_URL" \
+            '{
+              version:     $version,
+              released_at: $released_at,
+              scripts: {
+                "linux":        "\($base_url)/linux/install.sh",
+                "macos":        "\($base_url)/macos/install.sh",
+                "raspberry-pi": "\($base_url)/raspberry-pi/install.sh",
+                "windows":      "\($base_url)/windows/install.ps1"
+              }
+            }' > dist/latest.json
 
       - name: Setup SSH
         run: |
