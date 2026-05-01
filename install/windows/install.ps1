@@ -1,0 +1,155 @@
+# ASPOS Print Agent — Windows PowerShell installer
+# Run in an elevated (Administrator) PowerShell prompt.
+#
+# Usage:
+#   Install-AsposAgent -Token <token> -AgentId <id> [-BackendUrl <url>] [-ReverbAppKey <key>] [-ReverbHost <host>]
+#
+# One-liner from ASPOS UI (copy-paste into elevated PowerShell):
+#   iwr -useb https://aspos.io/install/agent/windows/install.ps1 | iex; `
+#     Install-AsposAgent -Token "aspos_agt_xxx" -AgentId 42 -BackendUrl "https://pos.mybrand.com" -ReverbAppKey "rev_key_xxx"
+
+#Requires -RunAsAdministrator
+
+function Install-AsposAgent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Token,
+
+        [Parameter(Mandatory=$true)]
+        [int]$AgentId,
+
+        [string]$BackendUrl    = "https://aspos.io",
+        [string]$ReverbAppKey  = "",
+        [string]$ReverbHost    = "",
+        [int]$ReverbPort       = 443,
+        [string]$ReverbScheme  = "https"
+    )
+
+    $ErrorActionPreference = "Stop"
+
+    $InstallDir  = "C:\Program Files\ASPOS Agent"
+    $WinswUrl    = "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe"
+    $WinswExe    = Join-Path $InstallDir "AsposAgent.exe"
+    $ServiceXml  = Join-Path $InstallDir "AsposAgent.xml"
+    $EnvFile     = Join-Path $InstallDir ".env"
+    $LogDir      = Join-Path $InstallDir "logs"
+    $HealthUrl   = "http://localhost:8585/health"
+    $NodeMinVer  = 20
+
+    function Write-Log { param([string]$Msg) Write-Host "[aspos-install] $Msg" }
+
+    # Derive REVERB_HOST from BackendUrl if not supplied
+    if ([string]::IsNullOrEmpty($ReverbHost)) {
+        $ReverbHost = ($BackendUrl -replace '^https?://', '') -replace '/.*', ''
+    }
+
+    # ── 1. Node.js ────────────────────────────────────────────────────────────
+    $nodeOk = $false
+    try {
+        $nodePath = (Get-Command node -ErrorAction Stop).Source
+        $nodeVer  = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        if ($nodeVer -ge $NodeMinVer) { $nodeOk = $true }
+    } catch {}
+
+    if (-not $nodeOk) {
+        Write-Log "Node.js ${NodeMinVer}+ not found. Installing via winget..."
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget install --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
+        } else {
+            # Fallback: download the MSI directly
+            Write-Log "winget not available — downloading Node.js MSI..."
+            $msiUrl = "https://nodejs.org/dist/latest-v${NodeMinVer}.x/node-v${NodeMinVer}.99.0-x64.msi"
+            $msiPath = Join-Path $env:TEMP "nodejs.msi"
+            Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+            Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn" -Wait
+            Remove-Item $msiPath -Force
+        }
+        # Refresh PATH
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("Path","User")
+    } else {
+        Write-Log "Node.js $(node --version) already installed."
+    }
+
+    # ── 2. Install directory ──────────────────────────────────────────────────
+    if (-not (Test-Path $InstallDir)) {
+        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    }
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+
+    # ── 3. Clone / update agent code ─────────────────────────────────────────
+    if (Test-Path (Join-Path $InstallDir ".git")) {
+        Write-Log "Updating existing installation..."
+        git -C $InstallDir pull --ff-only
+    } else {
+        Write-Log "Cloning ASPOS Print Agent to $InstallDir..."
+        git clone https://github.com/stszone/aspos-print-agent.git $InstallDir
+    }
+    Set-Location $InstallDir
+    npm ci --omit=dev
+
+    # ── 4. .env ───────────────────────────────────────────────────────────────
+    Write-Log "Writing .env..."
+    # Write env file without displaying token in output
+    $envContent = @"
+BACKEND_URL=$BackendUrl
+REVERB_APP_KEY=$ReverbAppKey
+REVERB_HOST=$ReverbHost
+REVERB_PORT=$ReverbPort
+REVERB_SCHEME=$ReverbScheme
+AGENT_ID=$AgentId
+AGENT_TOKEN=$Token
+HEALTH_PORT=8585
+LOG_LEVEL=info
+"@
+    [System.IO.File]::WriteAllText($EnvFile, $envContent, [System.Text.Encoding]::UTF8)
+    # Restrict file permissions to SYSTEM + Administrators only
+    $acl = Get-Acl $EnvFile
+    $acl.SetAccessRuleProtection($true, $false)
+    $rule1 = New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM","FullControl","Allow")
+    $rule2 = New-Object System.Security.AccessControl.FileSystemAccessRule("Administrators","FullControl","Allow")
+    $acl.AddAccessRule($rule1)
+    $acl.AddAccessRule($rule2)
+    Set-Acl $EnvFile $acl
+
+    # ── 5. WinSW service ─────────────────────────────────────────────────────
+    # Download WinSW if not already present
+    if (-not (Test-Path $WinswExe)) {
+        Write-Log "Downloading WinSW service wrapper..."
+        Invoke-WebRequest -Uri $WinswUrl -OutFile $WinswExe -UseBasicParsing
+    }
+
+    # Copy service descriptor XML (env vars are loaded from .env by Node dotenv)
+    $srcXml = Join-Path $InstallDir "install\windows\aspos-agent.xml"
+    Copy-Item $srcXml $ServiceXml -Force
+
+    # Stop and uninstall existing service before re-installing (idempotent)
+    if (Get-Service -Name "AsposAgent" -ErrorAction SilentlyContinue) {
+        Write-Log "Removing existing service..."
+        & $WinswExe stop  2>$null
+        & $WinswExe uninstall
+    }
+
+    Write-Log "Installing Windows service..."
+    & $WinswExe install
+    & $WinswExe start
+
+    # ── 6. Health check ───────────────────────────────────────────────────────
+    Write-Log "Waiting for health check..."
+    $retries = 12
+    $wait    = 5
+    for ($i = 1; $i -le $retries; $i++) {
+        try {
+            $r = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+            if ($r.StatusCode -eq 200) {
+                Write-Log "✓ Health check passed."
+                Write-Log "Done. Manage with: AsposAgent.exe {start|stop|status}"
+                return
+            }
+        } catch {}
+        Write-Log "  Attempt $i/$retries — retrying in ${wait}s..."
+        Start-Sleep -Seconds $wait
+    }
+    throw "[aspos-install] ERROR: Health check failed after $($retries * $wait)s. Check logs in $LogDir"
+}
