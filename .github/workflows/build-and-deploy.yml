@@ -9,6 +9,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   # ---------------------------------------------------------------------------
   # Job 1: Test
@@ -196,6 +200,9 @@ jobs:
     name: Deploy to AS POS APP SERVER
     needs: [build, package-scripts]
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
