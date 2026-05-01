@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# ASPOS Print Agent — Raspberry Pi installer
-# Supports: Raspberry Pi OS Bookworm / Bullseye (Debian-based)
+# ASPOS Print Agent — Linux installer
+# Supports: Debian/Ubuntu (apt), Fedora/RHEL/CentOS (dnf/yum)
 #
 # Usage:
 #   sudo bash install.sh <AGENT_TOKEN> <AGENT_ID> [BACKEND_URL] [REVERB_APP_KEY] [REVERB_HOST]
 #
 # Example (pipe from ASPOS UI command):
-#   curl -fsSL https://aspos.io/install/agent/raspberry-pi/install.sh | \
+#   curl -fsSL https://aspos.io/install/agent/linux/install.sh | \
 #     sudo bash -s -- aspos_agt_xxx 42 https://pos.mybrand.com rev_key_xxx
 
 set -euo pipefail
@@ -34,6 +34,7 @@ die()  { echo "[aspos-install] ERROR: $*" >&2; exit 1; }
 [ -n "$REVERB_APP_KEY" ] || die "REVERB_APP_KEY is required (arg 4)."
 [ "$(id -u)" -eq 0 ]  || die "Run as root: sudo bash install.sh ..."
 
+# Derive REVERB_HOST from BACKEND_URL if not supplied
 if [ -z "$REVERB_HOST" ]; then
     REVERB_HOST=$(echo "$BACKEND_URL" | sed -E 's|^https?://||' | sed 's|/.*||')
 fi
@@ -42,10 +43,21 @@ fi
 node_major() { node -e 'process.stdout.write(process.versions.node.split(".")[0])' 2>/dev/null || echo 0; }
 
 if ! command -v node &>/dev/null || [ "$(node_major)" -lt "$NODE_MIN_VERSION" ]; then
-    log "Installing Node.js ${NODE_MIN_VERSION} via NodeSource..."
-    # Note: review https://deb.nodesource.com/setup_${NODE_MIN_VERSION}.x before running in production.
-    curl -fsSL "https://deb.nodesource.com/setup_${NODE_MIN_VERSION}.x" | bash -
-    apt-get install -y nodejs
+    if command -v apt-get &>/dev/null; then
+        log "Installing Node.js ${NODE_MIN_VERSION} via NodeSource (apt)..."
+        curl -fsSL "https://deb.nodesource.com/setup_${NODE_MIN_VERSION}.x" | bash -
+        apt-get install -y nodejs
+    elif command -v dnf &>/dev/null; then
+        log "Installing Node.js ${NODE_MIN_VERSION} via NodeSource (dnf)..."
+        curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MIN_VERSION}.x" | bash -
+        dnf install -y nodejs
+    elif command -v yum &>/dev/null; then
+        log "Installing Node.js ${NODE_MIN_VERSION} via NodeSource (yum)..."
+        curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MIN_VERSION}.x" | bash -
+        yum install -y nodejs
+    else
+        die "Unsupported package manager. Install Node.js ${NODE_MIN_VERSION}+ manually from https://nodejs.org then re-run."
+    fi
 else
     log "Node.js $(node --version) already installed."
 fi
@@ -57,7 +69,7 @@ if ! id "$SERVICE_USER" &>/dev/null; then
 fi
 
 # ── 3. Clone / update agent code ─────────────────────────────────────────────
-command -v git &>/dev/null || die "git is not installed. Install it (apt-get install git) and re-run."
+command -v git &>/dev/null || die "git is not installed. Install it (e.g. apt-get install git) and re-run."
 if [ -d "$INSTALL_DIR/.git" ]; then
     log "Updating existing installation..."
     git -C "$INSTALL_DIR" pull --ff-only
@@ -75,6 +87,7 @@ chown -R "$SERVICE_USER": "$INSTALL_DIR"
 log "Writing .env..."
 TMPENV=$(mktemp)
 chmod 600 "$TMPENV"
+# Write without echoing token to stdout
 cat > "$TMPENV" <<ENV
 BACKEND_URL=${BACKEND_URL}
 REVERB_APP_KEY=${REVERB_APP_KEY}
@@ -90,7 +103,7 @@ chown "$SERVICE_USER": "$TMPENV"
 mv "$TMPENV" "$INSTALL_DIR/.env"
 
 # ── 5. systemd service ────────────────────────────────────────────────────────
-cp "$INSTALL_DIR/install/raspberry-pi/aspos-agent.service" "$SERVICE_FILE"
+cp "$INSTALL_DIR/install/linux/aspos-agent.service" "$SERVICE_FILE"
 sed -i "s/^User=.*/User=${SERVICE_USER}/" "$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable aspos-agent
