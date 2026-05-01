@@ -39,6 +39,11 @@ function Install-AsposAgent {
 
     function Write-Log { param([string]$Msg) Write-Host "[aspos-install] $Msg" }
 
+    # Validate required parameters
+    if ([string]::IsNullOrEmpty($ReverbAppKey)) {
+        throw "[aspos-install] ERROR: -ReverbAppKey is required. Obtain it from your ASPOS dashboard."
+    }
+
     # Derive REVERB_HOST from BackendUrl if not supplied
     if ([string]::IsNullOrEmpty($ReverbHost)) {
         $ReverbHost = ($BackendUrl -replace '^https?://', '') -replace '/.*', ''
@@ -83,6 +88,9 @@ function Install-AsposAgent {
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
     # ── 3. Clone / update agent code ─────────────────────────────────────────
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        throw "[aspos-install] ERROR: git is not installed. Install Git from https://git-scm.com/download/win and re-run."
+    }
     if (Test-Path (Join-Path $InstallDir ".git")) {
         Write-Log "Updating existing installation..."
         git -C $InstallDir pull --ff-only
@@ -146,8 +154,9 @@ LOG_LEVEL=info
 
     # ── 6. Health check ───────────────────────────────────────────────────────
     Write-Log "Waiting for health check..."
-    $retries = 12
-    $wait    = 5
+    $retries       = 12
+    $wait          = 5
+    $lastErrMsg    = ""
     for ($i = 1; $i -le $retries; $i++) {
         try {
             $r = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
@@ -156,9 +165,9 @@ LOG_LEVEL=info
                 Write-Log "Done. Manage with: AsposAgent.exe {start|stop|status}"
                 return
             }
-        } catch {}
+        } catch { $lastErrMsg = $_.Exception.Message }
         Write-Log "  Attempt $i/$retries — retrying in ${wait}s..."
         Start-Sleep -Seconds $wait
     }
-    throw "[aspos-install] ERROR: Health check failed after $($retries * $wait)s. Check logs in $LogDir"
+    throw "[aspos-install] ERROR: Health check at $HealthUrl failed after $($retries * $wait)s ($lastErrMsg). Check logs in $LogDir"
 }
