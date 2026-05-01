@@ -30,6 +30,8 @@ die()  { echo "[aspos-install] ERROR: $*" >&2; exit 1; }
 # ── 0. Validate ───────────────────────────────────────────────────────────────
 [ -n "$AGENT_TOKEN" ] || die "AGENT_TOKEN is required (arg 1)."
 [ -n "$AGENT_ID" ]    || die "AGENT_ID is required (arg 2)."
+[[ "$AGENT_ID" =~ ^[0-9]+$ ]] || die "AGENT_ID must be a positive integer, got: '${AGENT_ID}'."
+[ -n "$REVERB_APP_KEY" ] || die "REVERB_APP_KEY is required (arg 4)."
 [ "$(id -u)" -eq 0 ]  || die "Run as root: sudo bash install.sh ..."
 
 if [ -z "$REVERB_HOST" ]; then
