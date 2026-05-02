@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload via rsync
         run: |
-          rsync -avz \
+          rsync -rlptz \
             -e "ssh -i ~/.ssh/deploy_key -p 22 -o StrictHostKeyChecking=yes" \
             ./dist/ \
             ${{ secrets.ASPOS_APPS_USER }}@${{ secrets.ASPOS_APPS_HOST }}:${{ secrets.ASPOS_APPS_PATH }}/
