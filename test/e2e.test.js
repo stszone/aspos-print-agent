@@ -212,7 +212,7 @@ describe('processJob() end-to-end: mock printer TCP + mock backend HTTP', () => 
 
         // Buffer
         dbPath = path.join(os.tmpdir(), `e2e-${Date.now()}.db`);
-        buffer = new JobBuffer(dbPath);
+        buffer = await JobBuffer.create(dbPath);
     });
 
     afterEach(async () => {

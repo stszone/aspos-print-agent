@@ -17,27 +17,57 @@ const { version } = JSON.parse(
     fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'),
 );
 
-export function startHealthServer(getStatus) {
+export function startHealthServer(getStatus, history, onReprint) {
     const server = http.createServer((req, res) => {
-        if (req.method !== 'GET' || req.url !== '/health') {
-            res.writeHead(404);
-            res.end();
+        const corsHeaders = {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+        };
+
+        if (req.method === 'GET' && req.url === '/health') {
+            const status = getStatus();
+            const body = JSON.stringify({
+                status:     status.connected ? 'ok' : 'degraded',
+                connected:  status.connected,
+                agent_id:   config.agentId,
+                uptime_s:   Math.floor(process.uptime()),
+                version,
+            });
+            res.writeHead(status.connected ? 200 : 503, corsHeaders);
+            res.end(body);
             return;
         }
 
-        const status = getStatus();
-        const body = JSON.stringify({
-            status:     status.connected ? 'ok' : 'degraded',
-            connected:  status.connected,
-            agent_id:   config.agentId,
-            uptime_s:   Math.floor(process.uptime()),
-            version,
-        });
+        if (req.method === 'GET' && req.url.startsWith('/local-receipts')) {
+            const url  = new URL(req.url, 'http://localhost');
+            const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20', 10), 50);
+            const receipts = history ? history.recent(limit) : [];
+            res.writeHead(200, corsHeaders);
+            res.end(JSON.stringify({ status: 'ok', data: receipts }));
+            return;
+        }
 
-        res.writeHead(status.connected ? 200 : 503, {
-            'Content-Type': 'application/json',
-        });
-        res.end(body);
+        if (req.method === 'POST' && req.url === '/reprint') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let job;
+                try { job = JSON.parse(body); } catch {
+                    res.writeHead(400, corsHeaders);
+                    res.end(JSON.stringify({ status: 'error', message: 'invalid JSON' }));
+                    return;
+                }
+                if (typeof onReprint === 'function') {
+                    onReprint(job).catch(err => logger.error('reprint: error', { err: err.message }));
+                }
+                res.writeHead(202, corsHeaders);
+                res.end(JSON.stringify({ status: 'accepted' }));
+            });
+            return;
+        }
+
+        res.writeHead(404, corsHeaders);
+        res.end(JSON.stringify({ status: 'not_found' }));
     });
 
     server.listen(config.healthPort, '127.0.0.1', () => {

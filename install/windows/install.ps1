@@ -38,7 +38,7 @@ function Install-AsposAgent {
     $EnvFile     = Join-Path $InstallDir ".env"
     $LogDir      = Join-Path $InstallDir "logs"
     $HealthUrl   = "http://localhost:8585/health"
-    $NodeMinVer  = 20
+    $NodeMinVer  = 22
 
     function Write-Log { param([string]$Msg) Write-Host "[aspos-install] $Msg" }
 

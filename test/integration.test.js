@@ -46,23 +46,20 @@ describe('integration: processJob', () => {
     let dbPath;
     let buffer;
 
-    beforeEach((done) => {
+    beforeEach(async () => {
         received = [];
         server = net.createServer((sock) => { sock.on('data', c => received.push(c)); });
-        server.listen(0, '127.0.0.1', () => {
-            serverPort = server.address().port;
-            dbPath = path.join(os.tmpdir(), `int-${Date.now()}.db`);
-            buffer = new JobBuffer(dbPath);
-            done();
-        });
+        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        serverPort = server.address().port;
+        dbPath = path.join(os.tmpdir(), `int-${Date.now()}.db`);
+        buffer = await JobBuffer.create(dbPath);
     });
 
-    afterEach((done) => {
+    afterEach(async () => {
         buffer.close();
         fs.rmSync(dbPath, { force: true });
         jest.clearAllMocks();
-        if (server.listening) server.close(done);
-        else done();
+        if (server.listening) await new Promise(resolve => server.close(resolve));
     });
 
     function makeJob(overrides = {}) {
@@ -127,7 +124,7 @@ describe('integration: processJob', () => {
         });
 
         // Force job back into due queue by resetting next_retry_at
-        buffer.db.prepare('UPDATE jobs SET next_retry_at = 0 WHERE job_id = ?').run(job.job_id);
+        buffer.db.run('UPDATE jobs SET next_retry_at = 0 WHERE job_id = ?', [job.job_id]);
 
         const due = buffer.dueJobs();
         expect(due).toHaveLength(1);

@@ -11,9 +11,9 @@ describe('JobBuffer', () => {
     let buf;
     let dbPath;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         dbPath = tmpDb();
-        buf = new JobBuffer(dbPath);
+        buf = await JobBuffer.create(dbPath);
     });
 
     afterEach(() => {
@@ -64,11 +64,29 @@ describe('JobBuffer', () => {
     });
 
     test('job becomes abandoned after TTL exceeded', () => {
-        // Manually insert a very old job
         buf.enqueue(job());
         const old = Date.now() - 25 * 60 * 60 * 1000; // 25 h ago
-        buf.db.prepare('UPDATE jobs SET received_at = ? WHERE job_id = ?').run(old, 'abc-123');
+        buf.db.run('UPDATE jobs SET received_at = ? WHERE job_id = ?', [old, 'abc-123']);
         buf.recordFailure('abc-123');
         expect(buf.abandonedJobs()).toHaveLength(1);
+    });
+
+    test('1000 writes all persist after close and reopen', async () => {
+        const jobs = Array.from({ length: 1000 }, (_, i) => ({
+            job_id:      `persist-${i}`,
+            payload_b64: 'AABB',
+            driver:      'network_escpos',
+        }));
+
+        for (const j of jobs) buf.enqueue(j);
+        buf.close();
+
+        const buf2 = await JobBuffer.create(dbPath);
+        // All 1000 enqueued with next_retry_at = 0 (initial insert) → all due
+        const due = buf2.dueJobs();
+        expect(due).toHaveLength(1000);
+        const ids = new Set(due.map(j => j.job_id));
+        expect(ids.size).toBe(1000);
+        buf2.close();
     });
 });
