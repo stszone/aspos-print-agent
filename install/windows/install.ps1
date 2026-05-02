@@ -101,13 +101,7 @@ function Install-AsposAgent {
         Write-Log "Node.js $(node --version) already installed — meets minimum v${NodeMinVer}."
     }
 
-    # ── 2. Install directory ──────────────────────────────────────────────────
-    if (-not (Test-Path $InstallDir)) {
-        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    }
-    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-
-    # ── 3. Clone / update agent code ─────────────────────────────────────────
+    # ── 2. Clone / update agent code ─────────────────────────────────────────
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         throw "[aspos-install] ERROR: git is not installed. Install Git from https://git-scm.com/download/win and re-run."
     }
@@ -116,10 +110,19 @@ function Install-AsposAgent {
         git -C $InstallDir pull --ff-only
         if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git pull' failed (exit $LASTEXITCODE)." }
     } else {
+        # Remove any leftover directory (partial installs, or dir created by a prior
+        # run that never completed the clone) — git refuses to clone into a non-empty path.
+        if (Test-Path $InstallDir) {
+            Write-Log "Removing incomplete installation directory before cloning..."
+            Remove-Item -Path $InstallDir -Recurse -Force
+        }
         Write-Log "Cloning ASPOS Print Agent to $InstallDir..."
         git clone https://github.com/stszone/aspos-print-agent.git $InstallDir
         if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git clone' failed (exit $LASTEXITCODE)." }
     }
+
+    # ── 3. Install directory ──────────────────────────────────────────────────
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
     Set-Location $InstallDir
     npm ci --omit=dev
     if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'npm ci' failed (exit $LASTEXITCODE)." }
