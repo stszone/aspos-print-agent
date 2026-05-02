@@ -17,7 +17,7 @@ const { version } = JSON.parse(
     fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'),
 );
 
-export function startHealthServer(getStatus, history) {
+export function startHealthServer(getStatus, history, onReprint) {
     const server = http.createServer((req, res) => {
         const corsHeaders = {
             'Content-Type': 'application/json',
@@ -44,6 +44,25 @@ export function startHealthServer(getStatus, history) {
             const receipts = history ? history.recent(limit) : [];
             res.writeHead(200, corsHeaders);
             res.end(JSON.stringify({ status: 'ok', data: receipts }));
+            return;
+        }
+
+        if (req.method === 'POST' && req.url === '/reprint') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let job;
+                try { job = JSON.parse(body); } catch {
+                    res.writeHead(400, corsHeaders);
+                    res.end(JSON.stringify({ status: 'error', message: 'invalid JSON' }));
+                    return;
+                }
+                if (typeof onReprint === 'function') {
+                    onReprint(job).catch(err => logger.error('reprint: error', { err: err.message }));
+                }
+                res.writeHead(202, corsHeaders);
+                res.end(JSON.stringify({ status: 'accepted' }));
+            });
             return;
         }
 

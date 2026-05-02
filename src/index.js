@@ -39,7 +39,7 @@ async function handleJob(jobData) {
 
 const connection = new AgentConnection(handleJob);
 
-startHealthServer(() => ({ connected: connection.isConnected }), history);
+startHealthServer(() => ({ connected: connection.isConnected }), history, handleJob);
 connection.connect();
 
 async function retryBufferedJobs() {
