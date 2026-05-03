@@ -72,7 +72,7 @@ function Install-AsposAgent {
         try {
             $nodeVer = [int](& "$Node22Dir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
             if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true; $NodeBin = "$Node22Dir\node.exe" }
-        } catch { }
+        } catch { Write-Warning "[aspos-install] Node detection failed for ${Node22Dir}: $($_.Exception.Message)" }
     }
 
     if (-not $nodeOk) {
@@ -85,9 +85,17 @@ function Install-AsposAgent {
         $nodeEntry = $nodeIndex | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $NodeMinVer } | Select-Object -First 1
         if (-not $nodeEntry) { throw "[aspos-install] ERROR: Could not find Node.js v${NodeMinVer}.x in distribution index." }
         $nodeVersion = $nodeEntry.version
-        $msiUrl  = "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-x64.msi"
+        $msiFilename = "node-${nodeVersion}-x64.msi"
+        $msiUrl  = "https://nodejs.org/dist/${nodeVersion}/${msiFilename}"
         $msiPath = Join-Path $env:TEMP "nodejs-22.msi"
         Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+        $shasums     = (Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt" -UseBasicParsing).Content
+        $expectedHash = (($shasums -split "`n") | Where-Object { $_ -match "\s${msiFilename}$" } | Select-Object -First 1) -replace '\s.*', ''
+        $actualHash   = (Get-FileHash -Path $msiPath -Algorithm SHA256).Hash
+        if ($actualHash.ToLower() -ne $expectedHash.ToLower()) {
+            Remove-Item $msiPath -Force
+            throw "[aspos-install] ERROR: SHA256 mismatch for ${msiFilename} — expected ${expectedHash}, got ${actualHash}."
+        }
         $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msiPath`" /quiet /norestart INSTALLDIR=`"$Node22Dir`""
         Remove-Item $msiPath -Force
         if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
