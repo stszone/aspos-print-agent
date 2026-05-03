@@ -95,7 +95,7 @@ else
 fi
 
 cd "$INSTALL_DIR"
-"$(dirname "$NODE_BIN")/npm" ci --omit=dev
+"$NODE_BIN" "$(dirname "$NODE_BIN")/npm" ci --omit=dev
 mkdir -p "$INSTALL_DIR/logs"
 chown -R "$SERVICE_USER": "$INSTALL_DIR"
 
