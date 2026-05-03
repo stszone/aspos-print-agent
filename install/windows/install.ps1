@@ -75,14 +75,6 @@ function Install-AsposAgent {
         } catch { }
     }
 
-    # Fall back to whatever node is on PATH
-    if (-not $nodeOk) {
-        try {
-            $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
-            if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true; $NodeBin = (Get-Command node -ErrorAction Stop).Source }
-        } catch { } # ignore: node not on PATH or wrong version
-    }
-
     if (-not $nodeOk) {
         # Use the nodejs.org dist index to install the exact required major.
         # winget's OpenJS.NodeJS.LTS tracks the active LTS and may install a newer
@@ -101,6 +93,10 @@ function Install-AsposAgent {
         if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
         if (-not (Test-Path "$Node22Dir\node.exe")) {
             throw "[aspos-install] ERROR: Node.js installed but node.exe not found at $Node22Dir."
+        }
+        $installedVer = [int](& "$Node22Dir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        if ($installedVer -ne $NodeMinVer) {
+            throw "[aspos-install] ERROR: Expected Node.js v${NodeMinVer}.x but MSI installed v${installedVer}.x at $Node22Dir."
         }
         $NodeBin = "$Node22Dir\node.exe"
     } else {
