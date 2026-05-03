@@ -61,7 +61,7 @@ function Install-AsposAgent {
     try {
         $nodePath = (Get-Command node -ErrorAction Stop).Source
         $nodeVer  = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
-        if ($nodeVer -ge $NodeMinVer) { $nodeOk = $true }
+        if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true }
     } catch { # ignore: node may not be installed — treat as not present }
 
     if (-not $nodeOk) {

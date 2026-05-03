@@ -42,8 +42,8 @@ fi
 # ── 1. Node.js ────────────────────────────────────────────────────────────────
 node_major() { node -e 'process.stdout.write(process.versions.node.split(".")[0])' 2>/dev/null || echo 0; }
 
-if ! command -v node &>/dev/null || [ "$(node_major)" -lt "$NODE_MIN_VERSION" ]; then
-    log "Node.js ${NODE_MIN_VERSION}+ not found. Installing via official package..."
+if ! command -v node &>/dev/null || [ "$(node_major)" -ne "$NODE_MIN_VERSION" ]; then
+    log "Node.js ${NODE_MIN_VERSION}.x not found. Installing via official package..."
     # Fetch the latest v20.x version number from the SHASUMS file
     LATEST_V=$(curl -fsSL "https://nodejs.org/dist/latest-v${NODE_MIN_VERSION}.x/SHASUMS256.txt" \
         | grep -oE "node-v[0-9]+\.[0-9]+\.[0-9]+" | head -1 | sed 's/node-v//')
