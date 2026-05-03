@@ -67,7 +67,7 @@ function Install-AsposAgent {
     try {
         $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])' -ErrorAction Stop)
         if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true }
-    } catch { # ignore: node may not be installed — treat as not present }
+    } catch { } # ignore: node may not be installed — treat as not present
 
     if (-not $nodeOk) {
         # Use the nodejs.org dist index to install the exact required major.
