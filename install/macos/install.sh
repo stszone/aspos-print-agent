@@ -120,7 +120,8 @@ mv "$TMPENV" "$INSTALL_DIR/.env"
 # ── 5. launchd plist ─────────────────────────────────────────────────────────
 cp "$PLIST_SRC" "$PLIST_DEST"
 # Replace the /usr/bin/env + node two-token wrapper with the pinned NODE_BIN path
-/usr/bin/sed -i '' "s|<string>/usr/bin/env</string>[[:space:]]*<string>node</string>|<string>${NODE_BIN}</string>|g" "$PLIST_DEST"
+# Uses perl slurp mode (-0777) because the two <string> elements span two lines
+perl -0777 -i -pe "s|<string>/usr/bin/env</string>\\s*<string>node</string>|<string>${NODE_BIN}</string>|g" "$PLIST_DEST"
 chown root:wheel "$PLIST_DEST"
 chmod 644 "$PLIST_DEST"
 
