@@ -79,10 +79,15 @@ describe('integration: processJob', () => {
         const job = makeJob();
         buffer.enqueue(job);
 
+        // Wait deterministically for the server to receive data
+        const dataReceived = new Promise(resolve => {
+            server.once('connection', sock => sock.once('data', resolve));
+        });
+
         const ok = await processJob(job);
+        await dataReceived;
 
         expect(ok).toBe(true);
-        await new Promise(r => setTimeout(r, 50));
         const sent = Buffer.concat(received).toString();
         expect(sent).toContain('Hello');
         expect(reportResult).toHaveBeenCalledWith('job-001', 'ok');
@@ -124,7 +129,7 @@ describe('integration: processJob', () => {
         });
 
         // Force job back into due queue by resetting next_retry_at
-        buffer.db.run('UPDATE jobs SET next_retry_at = 0 WHERE job_id = ?', [job.job_id]);
+        buffer._resetRetryForTest(job.job_id);
 
         const due = buffer.dueJobs();
         expect(due).toHaveLength(1);

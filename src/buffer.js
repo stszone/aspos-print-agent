@@ -134,6 +134,11 @@ export class JobBuffer {
         this._persist();
     }
 
+    /** Reset next_retry_at to 0 so the job is immediately due. Test helper only. */
+    _resetRetryForTest(jobId) {
+        this.db.run('UPDATE jobs SET next_retry_at = 0 WHERE job_id = ?', [jobId]);
+    }
+
     close() {
         this.db.close();
     }

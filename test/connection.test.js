@@ -160,4 +160,28 @@ describe('AgentConnection', () => {
 
         expect(onJob).toHaveBeenCalledWith(payload);
     });
+
+    test('onJob errors are caught and logged — not propagated', async () => {
+        const { default: logger } = await import('../src/logger.js');
+        const boom  = new Error('boom');
+        const onJob = jest.fn().mockRejectedValue(boom);
+        const conn  = new AgentConnection(onJob);
+        conn.connect();
+        connectionHandlers['connected']?.();
+
+        const payload = { job_id: 'err-job', driver: 'network_escpos', payload_b64: 'AA==' };
+
+        // Must not throw — errors are swallowed inside connection.js
+        await expect(
+            Promise.resolve(channelHandlers['App\\Events\\PrintJobReady']?.(payload))
+        ).resolves.not.toThrow();
+
+        // Give the microtask queue a tick for the rejection handler to run
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(logger.error).toHaveBeenCalledWith(
+            'connection: job handler threw',
+            expect.objectContaining({ err: 'boom' })
+        );
+    });
 });

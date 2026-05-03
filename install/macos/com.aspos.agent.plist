@@ -15,16 +15,10 @@
     <key>Label</key>
     <string>com.aspos.agent</string>
 
-    <!--
-        Node.js path differs by architecture:
-          Apple Silicon: /opt/homebrew/bin/node
-          Intel:         /usr/local/bin/node
-        Verify with: ls -la $(which node)
-        Or create a symlink: sudo ln -sf $(which node) /usr/local/bin/node
-    -->
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/node</string>
+        <string>/usr/bin/env</string>
+        <string>node</string>
         <string>/opt/aspos-agent/src/index.js</string>
     </array>
 

@@ -48,9 +48,21 @@ export function startHealthServer(getStatus, history, onReprint) {
         }
 
         if (req.method === 'POST' && req.url === '/reprint') {
+            const MAX_BODY = 1_048_576; // 1 MB
             let body = '';
-            req.on('data', chunk => { body += chunk; });
+            let bodyLen = 0;
+            req.on('data', chunk => {
+                bodyLen += chunk.length;
+                if (bodyLen > MAX_BODY) {
+                    res.writeHead(413, corsHeaders);
+                    res.end(JSON.stringify({ status: 'error', message: 'request body too large' }));
+                    req.destroy();
+                    return;
+                }
+                body += chunk;
+            });
             req.on('end', () => {
+                if (bodyLen > MAX_BODY) return; // already responded
                 let job;
                 try { job = JSON.parse(body); } catch {
                     res.writeHead(400, corsHeaders);

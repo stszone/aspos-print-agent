@@ -7,11 +7,11 @@ const wasmDir = path.join(
     '..', 'node_modules', 'sql.js', 'dist'
 );
 
-let _SQL = null;
+let _sqlPromise = null;
 
-export async function getSqlJs() {
-    if (!_SQL) {
-        _SQL = await initSqlJs({ locateFile: f => path.join(wasmDir, f) });
+export function getSqlJs() {
+    if (!_sqlPromise) {
+        _sqlPromise = initSqlJs({ locateFile: f => path.join(wasmDir, f) });
     }
-    return _SQL;
+    return _sqlPromise;
 }

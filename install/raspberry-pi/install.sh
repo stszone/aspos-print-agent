@@ -87,6 +87,7 @@ HEALTH_PORT=8585
 LOG_LEVEL=info
 ENV
 chown "$SERVICE_USER": "$TMPENV"
+chmod 600 "$TMPENV"
 mv "$TMPENV" "$INSTALL_DIR/.env"
 
 # ── 5. systemd service ────────────────────────────────────────────────────────
