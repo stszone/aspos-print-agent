@@ -53,7 +53,7 @@ function Install-AsposAgent {
 
     # Derive REVERB_HOST from BackendUrl if not supplied
     if ([string]::IsNullOrEmpty($ReverbHost)) {
-        $ReverbHost = ($BackendUrl -replace '^https?://', '') -replace '/.*', ''
+        $ReverbHost = $uri.Host
     }
 
     # ── 1. Node.js ────────────────────────────────────────────────────────────
@@ -131,6 +131,7 @@ LOG_LEVEL=info
     # Restrict file permissions to SYSTEM + Administrators only
     $acl = Get-Acl $EnvFile
     $acl.SetAccessRuleProtection($true, $false)
+    $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) | Out-Null }
     $rule1 = New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM","FullControl","Allow")
     $rule2 = New-Object System.Security.AccessControl.FileSystemAccessRule("Administrators","FullControl","Allow")
     $acl.AddAccessRule($rule1)
