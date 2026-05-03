@@ -87,7 +87,7 @@ function Install-AsposAgent {
         $nodeVersion = $nodeEntry.version
         $msiFilename = "node-${nodeVersion}-x64.msi"
         $msiUrl  = "https://nodejs.org/dist/${nodeVersion}/${msiFilename}"
-        $msiPath = Join-Path $env:TEMP "nodejs-22.msi"
+        $msiPath = Join-Path $env:TEMP "nodejs-${NodeMinVer}.msi"
         Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing -TimeoutSec 120
         $shasums     = (Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 30).Content
         $expectedHash = (($shasums -split "`n") | Where-Object { $_ -match "\s${msiFilename}$" } | Select-Object -First 1) -replace '\s.*', ''
@@ -136,6 +136,9 @@ function Install-AsposAgent {
     }
     Set-Location $InstallDir
     $NpmCmd = Join-Path (Split-Path $NodeBin) "npm.cmd"
+    if (-not (Test-Path $NpmCmd)) {
+        throw "[aspos-install] ERROR: npm.cmd not found at $NpmCmd (NodeBin: $NodeBin). Verify the Node.js installation at $NodeDir."
+    }
     & $NpmCmd ci --omit=dev
     if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'npm ci' failed (exit $LASTEXITCODE)." }
 
