@@ -54,12 +54,19 @@ if ! command -v node &>/dev/null || [ "$(node_major)" -ne "$NODE_MIN_VERSION" ];
     installer -pkg /tmp/nodejs.pkg -target /
     rm -f /tmp/nodejs.pkg
     log "Node.js v${LATEST_V} installed."
+    # Pin NODE_BIN to the just-installed binary — PATH may still resolve a
+    # different major (e.g. a Homebrew Node 24 that precedes /usr/local/bin)
+    NODE_BIN=""
+    for _bin in /usr/local/bin/node /opt/homebrew/bin/node; do
+        [ -x "$_bin" ] || continue
+        _maj=$("$_bin" -e 'process.stdout.write(process.versions.node.split(".")[0])' 2>/dev/null)
+        [ "$_maj" = "$NODE_MIN_VERSION" ] && NODE_BIN="$_bin" && break
+    done
+    [ -n "$NODE_BIN" ] || die "Node.js ${NODE_MIN_VERSION}.x was installed but could not be located."
 else
     log "Node.js $(node --version) already installed."
+    NODE_BIN=$(command -v node)
 fi
-
-# Resolve the actual node binary path after potential install
-NODE_BIN=$(command -v node)
 log "Using node at: $NODE_BIN"
 
 # ── 2. Service user ───────────────────────────────────────────────────────────

@@ -65,12 +65,25 @@ function Install-AsposAgent {
     } catch { # ignore: node may not be installed — treat as not present }
 
     if (-not $nodeOk) {
-        Write-Log "Node.js ${NodeMinVer}+ not found. Installing via winget..."
+        Write-Log "Node.js ${NodeMinVer}+ not found. Installing..."
+        $needMsi = $true
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             winget install --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
             if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: winget failed (exit $LASTEXITCODE)." }
-        } else {
-            # Fallback: download the MSI directly
+            # Refresh PATH and re-run version detection; winget installs the current
+            # LTS which may be a newer major than $NodeMinVer
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                        [System.Environment]::GetEnvironmentVariable("Path","User")
+            try {
+                $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
+                if ($nodeVer -eq $NodeMinVer) { $needMsi = $false }
+            } catch {}
+            if ($needMsi) {
+                Write-Log "winget installed Node.js $nodeVer, need ${NodeMinVer} — falling back to MSI..."
+            }
+        }
+        if ($needMsi) {
+            # Download the MSI directly (exact major version)
             Write-Log "winget not available — downloading Node.js MSI..."
             $nodeIndex = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing
             $nodeEntry = $nodeIndex | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $NodeMinVer } | Select-Object -First 1
@@ -83,7 +96,7 @@ function Install-AsposAgent {
             Remove-Item $msiPath -Force
             if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
         }
-        # Refresh PATH
+        # Refresh PATH after any installation
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
                     [System.Environment]::GetEnvironmentVariable("Path","User")
     } else {
