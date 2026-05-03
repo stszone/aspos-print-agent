@@ -60,12 +60,14 @@ export function startHealthServer(getStatus, history, onReprint) {
 
         if (req.method === 'GET' && req.url.startsWith('/local-receipts')) {
             const url  = new URL(req.url, 'http://localhost');
-            const parsedLimit = parseInt(url.searchParams.get('limit') ?? '20', 10);
-            const limit = Math.min(Number.isNaN(parsedLimit) || parsedLimit <= 0 ? 20 : parsedLimit, 50);
-            const receipts = history ? history.recent(limit) : [];
-            res.writeHead(200, corsHeaders);
-            res.end(JSON.stringify({ status: 'ok', data: receipts }));
-            return;
+            if (url.pathname === '/local-receipts') {
+                const parsedLimit = parseInt(url.searchParams.get('limit') ?? '20', 10);
+                const limit = Math.min(Number.isNaN(parsedLimit) || parsedLimit <= 0 ? 20 : parsedLimit, 50);
+                const receipts = history ? history.recent(limit) : [];
+                res.writeHead(200, corsHeaders);
+                res.end(JSON.stringify({ status: 'ok', data: receipts }));
+                return;
+            }
         }
 
         if (req.method === 'POST' && req.url === '/reprint') {
