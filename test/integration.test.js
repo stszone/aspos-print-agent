@@ -46,23 +46,20 @@ describe('integration: processJob', () => {
     let dbPath;
     let buffer;
 
-    beforeEach((done) => {
+    beforeEach(async () => {
         received = [];
         server = net.createServer((sock) => { sock.on('data', c => received.push(c)); });
-        server.listen(0, '127.0.0.1', () => {
-            serverPort = server.address().port;
-            dbPath = path.join(os.tmpdir(), `int-${Date.now()}.db`);
-            buffer = new JobBuffer(dbPath);
-            done();
-        });
+        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        serverPort = server.address().port;
+        dbPath = path.join(os.tmpdir(), `int-${Date.now()}.db`);
+        buffer = await JobBuffer.create(dbPath);
     });
 
-    afterEach((done) => {
+    afterEach(async () => {
         buffer.close();
         fs.rmSync(dbPath, { force: true });
         jest.clearAllMocks();
-        if (server.listening) server.close(done);
-        else done();
+        if (server.listening) await new Promise(resolve => server.close(resolve));
     });
 
     function makeJob(overrides = {}) {
@@ -82,10 +79,15 @@ describe('integration: processJob', () => {
         const job = makeJob();
         buffer.enqueue(job);
 
+        // Wait deterministically for the server to receive data
+        const dataReceived = new Promise(resolve => {
+            server.once('connection', sock => sock.once('data', resolve));
+        });
+
         const ok = await processJob(job);
+        await dataReceived;
 
         expect(ok).toBe(true);
-        await new Promise(r => setTimeout(r, 50));
         const sent = Buffer.concat(received).toString();
         expect(sent).toContain('Hello');
         expect(reportResult).toHaveBeenCalledWith('job-001', 'ok');
@@ -127,7 +129,7 @@ describe('integration: processJob', () => {
         });
 
         // Force job back into due queue by resetting next_retry_at
-        buffer.db.prepare('UPDATE jobs SET next_retry_at = 0 WHERE job_id = ?').run(job.job_id);
+        buffer._resetRetryForTest(job.job_id);
 
         const due = buffer.dueJobs();
         expect(due).toHaveLength(1);

@@ -51,14 +51,7 @@ export function sendToPrinter(host, port, bytes) {
                 WRITE_TIMEOUT_MS,
             );
 
-            socket.write(bytes, (err) => {
-                if (err) {
-                    settle(err);
-                } else {
-                    socket.end();
-                    socket.on('close', () => settle(null));
-                }
-            });
+            socket.end(bytes, () => settle(null));
         });
 
         socket.on('error', settle);

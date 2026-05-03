@@ -38,7 +38,7 @@ function Install-AsposAgent {
     $EnvFile     = Join-Path $InstallDir ".env"
     $LogDir      = Join-Path $InstallDir "logs"
     $HealthUrl   = "http://localhost:8585/health"
-    $NodeMinVer  = 20
+    $NodeMinVer  = 22
 
     function Write-Log { param([string]$Msg) Write-Host "[aspos-install] $Msg" }
 
@@ -53,7 +53,7 @@ function Install-AsposAgent {
 
     # Derive REVERB_HOST from BackendUrl if not supplied
     if ([string]::IsNullOrEmpty($ReverbHost)) {
-        $ReverbHost = ($BackendUrl -replace '^https?://', '') -replace '/.*', ''
+        $ReverbHost = $uri.Host
     }
 
     # ── 1. Node.js ────────────────────────────────────────────────────────────
@@ -61,16 +61,29 @@ function Install-AsposAgent {
     try {
         $nodePath = (Get-Command node -ErrorAction Stop).Source
         $nodeVer  = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
-        if ($nodeVer -ge $NodeMinVer) { $nodeOk = $true }
-    } catch {}
+        if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true }
+    } catch { # ignore: node may not be installed — treat as not present }
 
     if (-not $nodeOk) {
-        Write-Log "Node.js ${NodeMinVer}+ not found. Installing via winget..."
+        Write-Log "Node.js ${NodeMinVer}+ not found. Installing..."
+        $needMsi = $true
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             winget install --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
             if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: winget failed (exit $LASTEXITCODE)." }
-        } else {
-            # Fallback: download the MSI directly
+            # Refresh PATH and re-run version detection; winget installs the current
+            # LTS which may be a newer major than $NodeMinVer
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                        [System.Environment]::GetEnvironmentVariable("Path","User")
+            try {
+                $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
+                if ($nodeVer -eq $NodeMinVer) { $needMsi = $false }
+            } catch {}
+            if ($needMsi) {
+                Write-Log "winget installed Node.js $nodeVer, need ${NodeMinVer} — falling back to MSI..."
+            }
+        }
+        if ($needMsi) {
+            # Download the MSI directly (exact major version)
             Write-Log "winget not available — downloading Node.js MSI..."
             $nodeIndex = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing
             $nodeEntry = $nodeIndex | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $NodeMinVer } | Select-Object -First 1
@@ -83,7 +96,7 @@ function Install-AsposAgent {
             Remove-Item $msiPath -Force
             if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
         }
-        # Refresh PATH
+        # Refresh PATH after any installation
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
                     [System.Environment]::GetEnvironmentVariable("Path","User")
     } else {
@@ -131,6 +144,7 @@ LOG_LEVEL=info
     # Restrict file permissions to SYSTEM + Administrators only
     $acl = Get-Acl $EnvFile
     $acl.SetAccessRuleProtection($true, $false)
+    $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) | Out-Null }
     $rule1 = New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM","FullControl","Allow")
     $rule2 = New-Object System.Security.AccessControl.FileSystemAccessRule("Administrators","FullControl","Allow")
     $acl.AddAccessRule($rule1)

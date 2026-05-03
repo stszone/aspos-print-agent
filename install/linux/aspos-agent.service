@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Change to the user running the agent on your system
-User=aspos
+User=aspos-agent
 WorkingDirectory=/opt/aspos-agent
 ExecStart=/usr/bin/node src/index.js
 Restart=on-failure

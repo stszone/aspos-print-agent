@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ASPOS Print Agent — macOS installer
-# Requires: Node.js 20+ (install via https://nodejs.org or `brew install node`)
+# Requires: Node.js 22.x (install via https://nodejs.org or `brew install node@22`)
 #
 # Usage:
 #   sudo bash install.sh <AGENT_TOKEN> <AGENT_ID> [BACKEND_URL] [REVERB_APP_KEY] [REVERB_HOST]
@@ -19,7 +19,7 @@ REVERB_HOST="${5:-}"
 INSTALL_DIR="/opt/aspos-agent"
 PLIST_SRC="$INSTALL_DIR/install/macos/com.aspos.agent.plist"
 PLIST_DEST="/Library/LaunchDaemons/com.aspos.agent.plist"
-NODE_MIN_VERSION="20"
+NODE_MIN_VERSION="22"
 SERVICE_USER="aspos-agent"
 HEALTH_URL="http://localhost:8585/health"
 HEALTH_RETRIES=12
@@ -42,9 +42,9 @@ fi
 # ── 1. Node.js ────────────────────────────────────────────────────────────────
 node_major() { node -e 'process.stdout.write(process.versions.node.split(".")[0])' 2>/dev/null || echo 0; }
 
-if ! command -v node &>/dev/null || [ "$(node_major)" -lt "$NODE_MIN_VERSION" ]; then
-    log "Node.js ${NODE_MIN_VERSION}+ not found. Installing via official package..."
-    # Fetch the latest v20.x version number from the SHASUMS file
+if ! command -v node &>/dev/null || [ "$(node_major)" -ne "$NODE_MIN_VERSION" ]; then
+    log "Node.js ${NODE_MIN_VERSION}.x not found. Installing via official package..."
+    # Fetch the latest v${NODE_MIN_VERSION}.x version number from the SHASUMS file
     LATEST_V=$(curl -fsSL "https://nodejs.org/dist/latest-v${NODE_MIN_VERSION}.x/SHASUMS256.txt" \
         | grep -oE "node-v[0-9]+\.[0-9]+\.[0-9]+" | head -1 | sed 's/node-v//')
     [ -n "$LATEST_V" ] || die "Could not determine latest Node.js ${NODE_MIN_VERSION}.x version."
@@ -54,12 +54,19 @@ if ! command -v node &>/dev/null || [ "$(node_major)" -lt "$NODE_MIN_VERSION" ];
     installer -pkg /tmp/nodejs.pkg -target /
     rm -f /tmp/nodejs.pkg
     log "Node.js v${LATEST_V} installed."
+    # Pin NODE_BIN to the just-installed binary — PATH may still resolve a
+    # different major (e.g. a Homebrew Node 24 that precedes /usr/local/bin)
+    NODE_BIN=""
+    for _bin in /usr/local/bin/node /opt/homebrew/bin/node; do
+        [ -x "$_bin" ] || continue
+        _maj=$("$_bin" -e 'process.stdout.write(process.versions.node.split(".")[0])' 2>/dev/null)
+        [ "$_maj" = "$NODE_MIN_VERSION" ] && NODE_BIN="$_bin" && break
+    done
+    [ -n "$NODE_BIN" ] || die "Node.js ${NODE_MIN_VERSION}.x was installed but could not be located."
 else
     log "Node.js $(node --version) already installed."
+    NODE_BIN=$(command -v node)
 fi
-
-# Resolve the actual node binary path after potential install
-NODE_BIN=$(command -v node)
 log "Using node at: $NODE_BIN"
 
 # ── 2. Service user ───────────────────────────────────────────────────────────
@@ -88,7 +95,7 @@ else
 fi
 
 cd "$INSTALL_DIR"
-npm ci --omit=dev
+"$NODE_BIN" "$(dirname "$NODE_BIN")/npm" ci --omit=dev
 mkdir -p "$INSTALL_DIR/logs"
 chown -R "$SERVICE_USER": "$INSTALL_DIR"
 
@@ -112,8 +119,9 @@ mv "$TMPENV" "$INSTALL_DIR/.env"
 
 # ── 5. launchd plist ─────────────────────────────────────────────────────────
 cp "$PLIST_SRC" "$PLIST_DEST"
-# Substitute the node path in case Homebrew uses /opt/homebrew/bin/node (Apple Silicon)
-/usr/bin/sed -i '' "s|/usr/local/bin/node|${NODE_BIN}|g" "$PLIST_DEST"
+# Replace the /usr/bin/env + node two-token wrapper with the pinned NODE_BIN path
+# Uses perl slurp mode (-0777) because the two <string> elements span two lines
+perl -0777 -i -pe "s|<string>/usr/bin/env</string>\\s*<string>node</string>|<string>${NODE_BIN}</string>|g" "$PLIST_DEST"
 chown root:wheel "$PLIST_DEST"
 chmod 644 "$PLIST_DEST"
 

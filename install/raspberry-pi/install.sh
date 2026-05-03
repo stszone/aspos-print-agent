@@ -18,7 +18,7 @@ REVERB_APP_KEY="${4:-}"
 REVERB_HOST="${5:-}"
 INSTALL_DIR="/opt/aspos-agent"
 SERVICE_FILE="/etc/systemd/system/aspos-agent.service"
-NODE_MIN_VERSION="20"
+NODE_MIN_VERSION="22"
 SERVICE_USER="aspos-agent"
 HEALTH_URL="http://localhost:8585/health"
 HEALTH_RETRIES=12
@@ -41,7 +41,7 @@ fi
 # ── 1. Node.js ────────────────────────────────────────────────────────────────
 node_major() { node -e 'process.stdout.write(process.versions.node.split(".")[0])' 2>/dev/null || echo 0; }
 
-if ! command -v node &>/dev/null || [ "$(node_major)" -lt "$NODE_MIN_VERSION" ]; then
+if ! command -v node &>/dev/null || [ "$(node_major)" -ne "$NODE_MIN_VERSION" ]; then
     log "Installing Node.js ${NODE_MIN_VERSION} via NodeSource..."
     # Note: review https://deb.nodesource.com/setup_${NODE_MIN_VERSION}.x before running in production.
     curl -fsSL "https://deb.nodesource.com/setup_${NODE_MIN_VERSION}.x" | bash -
@@ -87,6 +87,7 @@ HEALTH_PORT=8585
 LOG_LEVEL=info
 ENV
 chown "$SERVICE_USER": "$TMPENV"
+chmod 600 "$TMPENV"
 mv "$TMPENV" "$INSTALL_DIR/.env"
 
 # ── 5. systemd service ────────────────────────────────────────────────────────

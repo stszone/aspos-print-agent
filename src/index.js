@@ -14,12 +14,14 @@ import 'dotenv/config';
 import config              from './config.js';
 import logger              from './logger.js';
 import { JobBuffer }       from './buffer.js';
+import { PrintHistory }    from './history.js';
 import { AgentConnection } from './connection.js';
 import { startHealthServer } from './health.js';
 import { processJob }      from './worker.js';
 import { reportResult }    from './backend.js';
 
-const buffer = new JobBuffer();
+const buffer  = await JobBuffer.create();
+const history = await PrintHistory.create();
 
 async function handleJob(jobData) {
     buffer.enqueue(jobData);
@@ -27,6 +29,9 @@ async function handleJob(jobData) {
     const ok = await processJob(jobData);
     if (ok) {
         buffer.remove(jobData.job_id);
+        if (jobData.kind === 'receipt' || jobData.kind === 'reprint') {
+            history.record(jobData);
+        }
     } else {
         buffer.recordFailure(jobData.job_id);
     }
@@ -34,7 +39,7 @@ async function handleJob(jobData) {
 
 const connection = new AgentConnection(handleJob);
 
-startHealthServer(() => ({ connected: connection.isConnected }));
+startHealthServer(() => ({ connected: connection.isConnected }), history, handleJob);
 connection.connect();
 
 async function retryBufferedJobs() {
@@ -64,6 +69,7 @@ async function shutdown(signal) {
     clearInterval(retryInterval);
     connection.stop();
     buffer.close();
+    history.close();
 }
 
 process.on('SIGTERM', async () => {

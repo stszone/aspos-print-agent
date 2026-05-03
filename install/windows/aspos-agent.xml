@@ -2,16 +2,24 @@
     ASPOS Print Agent — Windows Service descriptor for WinSW
     (https://github.com/winsw/winsw)
 
-    Setup:
-        1. Download winsw.exe from https://github.com/winsw/winsw/releases
-        2. Rename to AsposAgent.exe, place next to this file in C:\aspos-agent\
-        3. Edit BACKEND_URL, REVERB_APP_KEY, REVERB_HOST, AGENT_ID, AGENT_TOKEN below
-        4. Run in an admin command prompt:
+    Normal install: use the install.ps1 one-liner from the ASPOS dashboard —
+    it clones the repo, writes .env, patches this file, and registers the service.
+
+    Manual install (advanced):
+        1. Run install.ps1 or clone the repo manually to a directory of your choice
+        2. Edit .env in the install directory with BACKEND_URL, REVERB_APP_KEY,
+           REVERB_HOST, AGENT_ID, and AGENT_TOKEN
+        3. Download WinSW from https://github.com/winsw/winsw/releases and place
+           AsposAgent.exe in the install directory alongside this file
+        4. In an elevated command prompt from the install directory:
                AsposAgent.exe install
                AsposAgent.exe start
     Uninstall:
                AsposAgent.exe stop
                AsposAgent.exe uninstall
+
+    Note: <env> entries and paths below are overwritten by install.ps1 at
+    install time. The values here are placeholders only.
 -->
 <service>
     <id>AsposAgent</id>

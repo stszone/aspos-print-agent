@@ -40,9 +40,10 @@ describe('sendToPrinter', () => {
     });
 
     test('rejects on connect timeout to unreachable host', async () => {
-        // 192.0.2.0/24 is TEST-NET — guaranteed unreachable
+        // 192.0.2.0/24 is TEST-NET — routed to nowhere. Some kernels return
+        // ENETUNREACH/EHOSTUNREACH immediately rather than timing out.
         await expect(
             sendToPrinter('192.0.2.1', 9100, Buffer.from([0x42]))
-        ).rejects.toThrow(/timeout/i);
+        ).rejects.toThrow(/(timeout|unreachable|ENETUNREACH|EHOSTUNREACH|EADDRNOTAVAIL)/i);
     }, 15_000);
 });
