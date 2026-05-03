@@ -51,9 +51,15 @@ function Install-AsposAgent {
         throw "[aspos-install] ERROR: -BackendUrl '$BackendUrl' is not a valid absolute URI."
     }
 
-    # Derive REVERB_HOST from BackendUrl if not supplied
+    # Derive REVERB_HOST, REVERB_SCHEME, REVERB_PORT from BackendUrl if not supplied
     if ([string]::IsNullOrEmpty($ReverbHost)) {
         $ReverbHost = $uri.Host
+        if (-not $PSBoundParameters.ContainsKey('ReverbScheme')) {
+            $ReverbScheme = $uri.Scheme
+        }
+        if (-not $PSBoundParameters.ContainsKey('ReverbPort')) {
+            $ReverbPort = if ($uri.Port -eq -1) { if ($uri.Scheme -eq 'https') { 443 } else { 80 } } else { $uri.Port }
+        }
     }
 
     # ── 1. Node.js ────────────────────────────────────────────────────────────
@@ -67,7 +73,7 @@ function Install-AsposAgent {
         Write-Log "Node.js ${NodeMinVer}+ not found. Installing..."
         $needMsi = $true
         if (Get-Command winget -ErrorAction SilentlyContinue) {
-            winget install --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
+            winget install --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --scope machine --silent
             if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: winget failed (exit $LASTEXITCODE)." }
             # Refresh PATH and re-run version detection; winget installs the current
             # LTS which may be a newer major than $NodeMinVer

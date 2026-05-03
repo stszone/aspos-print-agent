@@ -17,12 +17,32 @@ const { version } = JSON.parse(
     fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'),
 );
 
+const trustedOrigin = process.env.ADMIN_UI_ORIGIN ??
+    (() => {
+        try { const u = new URL(config.backendUrl); return `${u.protocol}//${u.host}`; }
+        catch { return null; }
+    })();
+
 export function startHealthServer(getStatus, history, onReprint) {
+    const jsonHeaders = {
+        'Content-Type': 'application/json',
+        ...(trustedOrigin && { 'Access-Control-Allow-Origin': trustedOrigin }),
+    };
+
     const server = http.createServer((req, res) => {
-        const corsHeaders = {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-        };
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204, {
+                ...(trustedOrigin && {
+                    'Access-Control-Allow-Origin':  trustedOrigin,
+                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type',
+                }),
+            });
+            res.end();
+            return;
+        }
+
+        const corsHeaders = jsonHeaders;
 
         if (req.method === 'GET' && req.url === '/health') {
             const status = getStatus();

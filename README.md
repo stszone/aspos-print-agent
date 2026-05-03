@@ -154,6 +154,7 @@ The agent reads `.env` in the install directory. See [`.env.example`](.env.examp
 | `AGENT_ID` | Yes | Numeric agent ID from ASPOS admin panel |
 | `AGENT_TOKEN` | Yes | Agent authentication token |
 | `HEALTH_PORT` | No | Health endpoint port (default `8585`) |
+| `ADMIN_UI_ORIGIN` | No | Trusted CORS origin for `/local-receipts` and `/reprint` (default: derived from `BACKEND_URL`) |
 | `LOG_LEVEL` | No | `error` / `warn` / `info` / `debug` (default `info`) |
 
 ---

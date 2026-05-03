@@ -24,10 +24,16 @@ export class PrintHistory {
     }
 
     static async create(dbPath = './agent-history.db') {
-        const SQL    = await getSqlJs();
-        const stored = fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : null;
-        const db     = new SQL.Database(stored);
-        const hist   = new PrintHistory(db, dbPath);
+        const SQL = await getSqlJs();
+        let db;
+        try {
+            const stored = fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : null;
+            db = new SQL.Database(stored);
+        } catch (err) {
+            logger.error('history: failed to open existing DB, starting fresh', { err: err.message });
+            db = new SQL.Database();
+        }
+        const hist = new PrintHistory(db, dbPath);
         hist._migrate();
         hist._scheduleSave();
         return hist;
