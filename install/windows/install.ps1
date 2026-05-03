@@ -51,52 +51,39 @@ function Install-AsposAgent {
         throw "[aspos-install] ERROR: -BackendUrl '$BackendUrl' is not a valid absolute URI."
     }
 
-    # Derive REVERB_HOST from BackendUrl if not supplied
+    # Derive REVERB_HOST, REVERB_SCHEME, REVERB_PORT from BackendUrl if not supplied
     if ([string]::IsNullOrEmpty($ReverbHost)) {
         $ReverbHost = $uri.Host
+        if (-not $PSBoundParameters.ContainsKey('ReverbScheme')) {
+            $ReverbScheme = $uri.Scheme
+        }
+        if (-not $PSBoundParameters.ContainsKey('ReverbPort')) {
+            $ReverbPort = if ($uri.Port -eq -1) { if ($uri.Scheme -eq 'https') { 443 } else { 80 } } else { $uri.Port }
+        }
     }
 
     # ── 1. Node.js ────────────────────────────────────────────────────────────
     $nodeOk = $false
     try {
-        $nodePath = (Get-Command node -ErrorAction Stop).Source
-        $nodeVer  = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])' -ErrorAction Stop)
         if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true }
     } catch { # ignore: node may not be installed — treat as not present }
 
     if (-not $nodeOk) {
-        Write-Log "Node.js ${NodeMinVer}+ not found. Installing..."
-        $needMsi = $true
-        if (Get-Command winget -ErrorAction SilentlyContinue) {
-            winget install --id OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
-            if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: winget failed (exit $LASTEXITCODE)." }
-            # Refresh PATH and re-run version detection; winget installs the current
-            # LTS which may be a newer major than $NodeMinVer
-            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                        [System.Environment]::GetEnvironmentVariable("Path","User")
-            try {
-                $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
-                if ($nodeVer -eq $NodeMinVer) { $needMsi = $false }
-            } catch {}
-            if ($needMsi) {
-                Write-Log "winget installed Node.js $nodeVer, need ${NodeMinVer} — falling back to MSI..."
-            }
-        }
-        if ($needMsi) {
-            # Download the MSI directly (exact major version)
-            Write-Log "winget not available — downloading Node.js MSI..."
-            $nodeIndex = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing
-            $nodeEntry = $nodeIndex | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $NodeMinVer } | Select-Object -First 1
-            if (-not $nodeEntry) { throw "Could not find Node.js v${NodeMinVer}.x in distribution index." }
-            $nodeVersion = $nodeEntry.version
-            $msiUrl = "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-x64.msi"
-            $msiPath = Join-Path $env:TEMP "nodejs.msi"
-            Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
-            $proc = Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn" -Wait -PassThru
-            Remove-Item $msiPath -Force
-            if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
-        }
-        # Refresh PATH after any installation
+        # Use the nodejs.org dist index to install the exact required major.
+        # winget's OpenJS.NodeJS.LTS tracks the active LTS and would install a
+        # newer major (e.g. Node 24 when 22 is required), so we skip it entirely.
+        Write-Log "Node.js ${NodeMinVer}.x not found. Downloading MSI from nodejs.org..."
+        $nodeIndex = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing
+        $nodeEntry = $nodeIndex | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $NodeMinVer } | Select-Object -First 1
+        if (-not $nodeEntry) { throw "[aspos-install] ERROR: Could not find Node.js v${NodeMinVer}.x in distribution index." }
+        $nodeVersion = $nodeEntry.version
+        $msiUrl  = "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-x64.msi"
+        $msiPath = Join-Path $env:TEMP "nodejs.msi"
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+        $proc = Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn" -Wait -PassThru
+        Remove-Item $msiPath -Force
+        if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
                     [System.Environment]::GetEnvironmentVariable("Path","User")
     } else {

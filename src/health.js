@@ -17,12 +17,32 @@ const { version } = JSON.parse(
     fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'),
 );
 
+const trustedOrigin = process.env.ADMIN_UI_ORIGIN ??
+    (() => {
+        try { const u = new URL(config.backendUrl); return `${u.protocol}//${u.host}`; }
+        catch { return null; }
+    })();
+
 export function startHealthServer(getStatus, history, onReprint) {
+    const jsonHeaders = {
+        'Content-Type': 'application/json',
+        ...(trustedOrigin && { 'Access-Control-Allow-Origin': trustedOrigin }),
+    };
+
     const server = http.createServer((req, res) => {
-        const corsHeaders = {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-        };
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204, {
+                ...(trustedOrigin && {
+                    'Access-Control-Allow-Origin':  trustedOrigin,
+                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type',
+                }),
+            });
+            res.end();
+            return;
+        }
+
+        const corsHeaders = jsonHeaders;
 
         if (req.method === 'GET' && req.url === '/health') {
             const status = getStatus();
@@ -40,11 +60,14 @@ export function startHealthServer(getStatus, history, onReprint) {
 
         if (req.method === 'GET' && req.url.startsWith('/local-receipts')) {
             const url  = new URL(req.url, 'http://localhost');
-            const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20', 10), 50);
-            const receipts = history ? history.recent(limit) : [];
-            res.writeHead(200, corsHeaders);
-            res.end(JSON.stringify({ status: 'ok', data: receipts }));
-            return;
+            if (url.pathname === '/local-receipts') {
+                const parsedLimit = parseInt(url.searchParams.get('limit') ?? '20', 10);
+                const limit = Math.min(Number.isNaN(parsedLimit) || parsedLimit <= 0 ? 20 : parsedLimit, 50);
+                const receipts = history ? history.recent(limit) : [];
+                res.writeHead(200, corsHeaders);
+                res.end(JSON.stringify({ status: 'ok', data: receipts }));
+                return;
+            }
         }
 
         if (req.method === 'POST' && req.url === '/reprint') {
@@ -67,6 +90,12 @@ export function startHealthServer(getStatus, history, onReprint) {
                 try { job = JSON.parse(body); } catch {
                     res.writeHead(400, corsHeaders);
                     res.end(JSON.stringify({ status: 'error', message: 'invalid JSON' }));
+                    return;
+                }
+                if (typeof job.job_id !== 'string' || !job.job_id ||
+                    typeof job.driver  !== 'string' || !job.driver) {
+                    res.writeHead(400, corsHeaders);
+                    res.end(JSON.stringify({ status: 'error', message: 'job_id and driver are required' }));
                     return;
                 }
                 if (typeof onReprint === 'function') {
