@@ -119,8 +119,8 @@ mv "$TMPENV" "$INSTALL_DIR/.env"
 
 # ── 5. launchd plist ─────────────────────────────────────────────────────────
 cp "$PLIST_SRC" "$PLIST_DEST"
-# Substitute the node path in case Homebrew uses /opt/homebrew/bin/node (Apple Silicon)
-/usr/bin/sed -i '' "s|/usr/local/bin/node|${NODE_BIN}|g" "$PLIST_DEST"
+# Replace the /usr/bin/env + node two-token wrapper with the pinned NODE_BIN path
+/usr/bin/sed -i '' "s|<string>/usr/bin/env</string>[[:space:]]*<string>node</string>|<string>${NODE_BIN}</string>|g" "$PLIST_DEST"
 chown root:wheel "$PLIST_DEST"
 chmod 644 "$PLIST_DEST"
 
