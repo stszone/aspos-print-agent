@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ASPOS Print Agent — macOS installer
-# Requires: Node.js 22+ (install via https://nodejs.org or `brew install node`)
+# Requires: Node.js 22.x (install via https://nodejs.org or `brew install node@22`)
 #
 # Usage:
 #   sudo bash install.sh <AGENT_TOKEN> <AGENT_ID> [BACKEND_URL] [REVERB_APP_KEY] [REVERB_HOST]
@@ -95,7 +95,7 @@ else
 fi
 
 cd "$INSTALL_DIR"
-npm ci --omit=dev
+"$(dirname "$NODE_BIN")/npm" ci --omit=dev
 mkdir -p "$INSTALL_DIR/logs"
 chown -R "$SERVICE_USER": "$INSTALL_DIR"
 
