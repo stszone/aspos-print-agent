@@ -41,7 +41,7 @@ fi
 # ── 1. Node.js ────────────────────────────────────────────────────────────────
 node_major() { node -e 'process.stdout.write(process.versions.node.split(".")[0])' 2>/dev/null || echo 0; }
 
-if ! command -v node &>/dev/null || [ "$(node_major)" -lt "$NODE_MIN_VERSION" ]; then
+if ! command -v node &>/dev/null || [ "$(node_major)" -ne "$NODE_MIN_VERSION" ]; then
     log "Installing Node.js ${NODE_MIN_VERSION} via NodeSource..."
     # Note: review https://deb.nodesource.com/setup_${NODE_MIN_VERSION}.x before running in production.
     curl -fsSL "https://deb.nodesource.com/setup_${NODE_MIN_VERSION}.x" | bash -
