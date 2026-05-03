@@ -40,7 +40,8 @@ export function startHealthServer(getStatus, history, onReprint) {
 
         if (req.method === 'GET' && req.url.startsWith('/local-receipts')) {
             const url  = new URL(req.url, 'http://localhost');
-            const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20', 10), 50);
+            const parsedLimit = parseInt(url.searchParams.get('limit') ?? '20', 10);
+            const limit = Math.min(Number.isNaN(parsedLimit) || parsedLimit <= 0 ? 20 : parsedLimit, 50);
             const receipts = history ? history.recent(limit) : [];
             res.writeHead(200, corsHeaders);
             res.end(JSON.stringify({ status: 'ok', data: receipts }));
@@ -67,6 +68,12 @@ export function startHealthServer(getStatus, history, onReprint) {
                 try { job = JSON.parse(body); } catch {
                     res.writeHead(400, corsHeaders);
                     res.end(JSON.stringify({ status: 'error', message: 'invalid JSON' }));
+                    return;
+                }
+                if (typeof job.job_id !== 'string' || !job.job_id ||
+                    typeof job.driver  !== 'string' || !job.driver) {
+                    res.writeHead(400, corsHeaders);
+                    res.end(JSON.stringify({ status: 'error', message: 'job_id and driver are required' }));
                     return;
                 }
                 if (typeof onReprint === 'function') {

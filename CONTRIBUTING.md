@@ -28,7 +28,10 @@ For **security vulnerabilities**, do not open a public issue — see [SECURITY.m
 
 ## Development setup
 
+Node.js 22 is required (`engines` field enforces this). If you use nvm: `nvm use 22`.
+
 ```bash
+node -v               # should print v22.x.x
 npm install
 cp .env.example .env  # fill in values from your ASPOS admin panel
 npm test              # runs the full test suite offline (no live backend needed)

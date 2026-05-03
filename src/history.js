@@ -93,7 +93,11 @@ export class PrintHistory {
         const rows = [];
         while (stmt.step()) {
             const row = stmt.getAsObject();
-            rows.push({ ...JSON.parse(row.payload_json), printed_at_ms: row.printed_at });
+            try {
+                rows.push({ ...JSON.parse(row.payload_json), printed_at_ms: row.printed_at });
+            } catch {
+                logger.warn('history: skipping row with malformed payload_json', { printed_at: row.printed_at });
+            }
         }
         stmt.free();
         return rows;

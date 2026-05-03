@@ -30,7 +30,9 @@ async function handleJob(jobData) {
     if (ok) {
         buffer.remove(jobData.job_id);
         if (jobData.kind === 'receipt' || jobData.kind === 'reprint') {
-            history.record(jobData);
+            try { history.record(jobData); } catch (err) {
+                logger.warn('history: record failed (non-fatal)', { err: err.message });
+            }
         }
     } else {
         buffer.recordFailure(jobData.job_id);

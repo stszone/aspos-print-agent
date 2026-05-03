@@ -50,6 +50,7 @@ export class JobBuffer {
             fs.writeFileSync(this._dbPath, this.db.export());
         } catch (err) {
             logger.error('buffer: failed to persist', { err: err.message });
+            throw err;
         }
     }
 
@@ -134,7 +135,11 @@ export class JobBuffer {
         this._persist();
     }
 
-    /** Reset next_retry_at to 0 so the job is immediately due. Test helper only. */
+    /**
+     * Reset next_retry_at to 0 so the job is immediately due. Test helper only.
+     * Intentionally skips _persist() — tests operate on in-memory DBs and don't
+     * need disk writes between steps.
+     */
     _resetRetryForTest(jobId) {
         this.db.run('UPDATE jobs SET next_retry_at = 0 WHERE job_id = ?', [jobId]);
     }

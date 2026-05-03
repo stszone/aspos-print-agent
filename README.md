@@ -62,7 +62,7 @@ Full install script source is available at `https://aspos.io/install/agent/lates
 
 ## Architecture
 
-```
+```text
 ASPOS Cloud Backend
        │  WebSocket (Reverb / Laravel Echo)
        ▼

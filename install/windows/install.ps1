@@ -59,8 +59,7 @@ function Install-AsposAgent {
     # ── 1. Node.js ────────────────────────────────────────────────────────────
     $nodeOk = $false
     try {
-        $nodePath = (Get-Command node -ErrorAction Stop).Source
-        $nodeVer  = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])' -ErrorAction Stop)
         if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true }
     } catch { # ignore: node may not be installed — treat as not present }
 
@@ -77,7 +76,7 @@ function Install-AsposAgent {
             try {
                 $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])')
                 if ($nodeVer -eq $NodeMinVer) { $needMsi = $false }
-            } catch {}
+            } catch { Write-Warning "[aspos-install] Could not detect Node.js version after winget install." }
             if ($needMsi) {
                 Write-Log "winget installed Node.js $nodeVer, need ${NodeMinVer} — falling back to MSI..."
             }
