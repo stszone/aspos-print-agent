@@ -89,8 +89,11 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     log "Updating existing installation..."
     git -C "$INSTALL_DIR" pull --ff-only
 else
+    if [ -d "$INSTALL_DIR" ]; then
+        log "Removing broken installation at $INSTALL_DIR..."
+        rm -rf "$INSTALL_DIR"
+    fi
     log "Cloning ASPOS Print Agent to $INSTALL_DIR..."
-    mkdir -p "$INSTALL_DIR"
     git clone https://github.com/stszone/aspos-print-agent.git "$INSTALL_DIR"
 fi
 

@@ -187,13 +187,7 @@ function Install-AsposAgent {
         $NodeBin = Install-NodeMsi
     }
 
-    # ── 2. Install directory ──────────────────────────────────────────────────
-    if (-not (Test-Path $InstallDir)) {
-        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    }
-    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-
-    # ── 3. Clone / update agent code ─────────────────────────────────────────
+    # ── 2. Clone / update agent code ─────────────────────────────────────────
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         throw "[aspos-install] ERROR: git is not installed. Install Git from https://git-scm.com/download/win and re-run."
     }
@@ -202,11 +196,16 @@ function Install-AsposAgent {
         git -C $InstallDir pull --ff-only
         if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git pull' failed (exit $LASTEXITCODE)." }
     } else {
+        if (Test-Path $InstallDir) {
+            Write-Log "Removing broken installation at $InstallDir..."
+            Remove-Item $InstallDir -Recurse -Force
+        }
         Write-Log "Cloning ASPOS Print Agent to $InstallDir..."
         git clone https://github.com/stszone/aspos-print-agent.git $InstallDir
         if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git clone' failed (exit $LASTEXITCODE)." }
     }
     Set-Location $InstallDir
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
     $NpmCmd = Join-Path (Split-Path $NodeBin) "npm.cmd"
     if (-not (Test-Path $NpmCmd)) {
         throw "[aspos-install] ERROR: npm.cmd not found at $NpmCmd. Verify the Node.js installation alongside $NodeBin."
