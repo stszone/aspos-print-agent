@@ -25,7 +25,7 @@ const mockPusher = {
 
 jest.unstable_mockModule('pusher-js/node.js', () => {
     PusherConstructor = jest.fn(() => mockPusher);
-    return { default: PusherConstructor };
+    return { Pusher: PusherConstructor };
 });
 
 // --- Config mock -------------------------------------------------------
