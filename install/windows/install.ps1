@@ -283,16 +283,23 @@ LOG_LEVEL=info
     $retries       = 12
     $wait          = 5
     $lastErrMsg    = ""
+    # Accept 200 (connected) or 503 (agent running, Reverb not yet connected).
+    # Both mean the process started; Reverb may still be establishing the WebSocket.
     for ($i = 1; $i -le $retries; $i++) {
         try {
             $r = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
             if ($r.StatusCode -eq 200) {
-                Write-Log "✓ Health check passed."
+                Write-Log "Health check passed. Agent connected to Reverb."
+                Write-Log "Done. Manage with: AsposAgent.exe {start|stop|status}"
+                return
+            }
+            if ($r.StatusCode -eq 503) {
+                Write-Log "Health check passed. Agent started (Reverb connection pending)."
                 Write-Log "Done. Manage with: AsposAgent.exe {start|stop|status}"
                 return
             }
         } catch { $lastErrMsg = $_.Exception.Message }
-        Write-Log "  Attempt $i/$retries — retrying in ${wait}s..."
+        Write-Log "  Attempt $i/$retries -- retrying in ${wait}s..."
         Start-Sleep -Seconds $wait
     }
     throw "[aspos-install] ERROR: Health check at $HealthUrl failed after $($retries * $wait)s ($lastErrMsg). Check logs in $LogDir"
