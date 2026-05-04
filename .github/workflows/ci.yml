@@ -26,3 +26,12 @@ jobs:
 
       - name: Test
         run: npm run test:ci
+
+      - name: Check for unquoted dot in node -e split (regression guard)
+        run: |
+          if grep -qn 'split(\.' install/windows/install.ps1; then
+            echo "ERROR: Unquoted dot in split() detected in install/windows/install.ps1"
+            echo "       Use split('.') not split(.) — unquoted dot causes SyntaxError in node -e on Windows PowerShell 5.1"
+            echo "       This has regressed in PR #6, #8, #9. See fix/node-version-split-dot."
+            exit 1
+          fi

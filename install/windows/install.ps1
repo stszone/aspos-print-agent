@@ -108,7 +108,8 @@ function Install-AsposAgent {
         Move-Item $extracted.FullName $NodeDir
         Remove-Item $extractRoot -Force -ErrorAction SilentlyContinue
         if (-not (Test-Path "$NodeDir\node.exe")) { throw "[aspos-install] ERROR: ZIP extracted but node.exe not found at $NodeDir." }
-        $got = [int](& "$NodeDir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        # CRITICAL: dot in split('.') must be quoted; unquoted dot causes SyntaxError in node -e. Regressed in PR #6, #8, #9.
+        $got = [int](& "$NodeDir\node.exe" -e "process.stdout.write(process.versions.node.split('.')[0])")
         if ($got -ne $TargetNodeMajor) { throw "[aspos-install] ERROR: Expected v${TargetNodeMajor}.x but ZIP contained v${got}.x." }
         Write-Log "Node.js $(& "$NodeDir\node.exe" --version) installed at $NodeDir."
         return "$NodeDir\node.exe"
@@ -131,7 +132,8 @@ function Install-AsposAgent {
                     [System.Environment]::GetEnvironmentVariable("Path","User")
         $bin = (Get-Command node -ErrorAction SilentlyContinue).Source
         if (-not $bin -or -not (Test-Path $bin)) { throw "[aspos-install] ERROR: Node.js MSI installed but node.exe not found on PATH." }
-        $got = [int](& $bin -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        # CRITICAL: dot in split('.') must be quoted; unquoted dot causes SyntaxError in node -e. Regressed in PR #6, #8, #9.
+        $got = [int](& $bin -e "process.stdout.write(process.versions.node.split('.')[0])")
         if ($got -ne $TargetNodeMajor) { throw "[aspos-install] ERROR: Expected v${TargetNodeMajor}.x but MSI installed v${got}.x." }
         Write-Log "Node.js $(& $bin --version) installed at $bin."
         return $bin
@@ -143,7 +145,8 @@ function Install-AsposAgent {
     # 1a. Probe $NodeDir first — present when this script ran previously (ZIP install)
     if (Test-Path "$NodeDir\node.exe") {
         try {
-            $v = [int](& "$NodeDir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
+            # CRITICAL: dot in split('.') must be quoted; unquoted dot causes SyntaxError in node -e. Regressed in PR #6, #8, #9.
+            $v = [int](& "$NodeDir\node.exe" -e "process.stdout.write(process.versions.node.split('.')[0])")
             if ($v -ge $TargetNodeMajor) { $NodeBin = "$NodeDir\node.exe"; Write-Log "Using existing Node.js $v at $NodeDir." }
         } catch { Write-Warning "[aspos-install] Node detection failed for ${NodeDir}: $($_.Exception.Message)" }
     }
@@ -165,7 +168,8 @@ function Install-AsposAgent {
         }
         if ($pathNode) {
             $pathVer = -1
-            try { $pathVer = [int](& $pathNode -e 'process.stdout.write(process.versions.node.split(".")[0])') }
+            # CRITICAL: dot in split('.') must be quoted; unquoted dot causes SyntaxError in node -e. Regressed in PR #6, #8, #9.
+            try { $pathVer = [int](& $pathNode -e "process.stdout.write(process.versions.node.split('.')[0])") }
             catch { Write-Warning "[aspos-install] Could not detect version at ${pathNode}: $($_.Exception.Message)" }
             if ($pathVer -ge $TargetNodeMajor) {
                 $NodeBin = $pathNode
