@@ -18,7 +18,7 @@ import { PrintHistory }    from './history.js';
 import { AgentConnection } from './connection.js';
 import { startHealthServer } from './health.js';
 import { processJob }      from './worker.js';
-import { reportResult }    from './backend.js';
+import { reportResult, reportHeartbeat } from './backend.js';
 
 const buffer  = await JobBuffer.create();
 const history = await PrintHistory.create();
@@ -63,6 +63,7 @@ async function retryBufferedJobs() {
 }
 
 const retryInterval = setInterval(() => {
+    reportHeartbeat();
     retryBufferedJobs().catch(err => logger.error('retry: unhandled error', { err: err.message }));
 }, 30_000);
 
