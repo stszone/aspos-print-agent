@@ -1,15 +1,60 @@
 /**
  * HTTP client for ASPOS backend API calls made by the agent.
  *
- * Two endpoints (both defined in Phase 2.1):
+ * Endpoints:
  *   POST /api/brand_admin/broadcasting/agent-auth  — Pusher channel auth
+ *   POST /api/brand_admin/print-agents/heartbeat   — keepalive (every 30 s)
  *   POST /api/brand_admin/print-agents/result      — report print outcome
+ *
+ * If the backend has deleted the agent record, every endpoint here returns
+ * 410 Gone with body {"error":"agent_revoked"}. We detect that shape and
+ * fire the registered revoked handler so index.js can shut the service down
+ * cleanly instead of retrying forever.
  */
 
 import config from './config.js';
 import logger from './logger.js';
 
 const BACKEND_TIMEOUT_MS = 10_000;
+
+export class AgentRevokedError extends Error {
+    constructor() {
+        super('Agent has been revoked by the backend');
+        this.name = 'AgentRevokedError';
+    }
+}
+
+let revokedHandler = null;
+
+export function setRevokedHandler(fn) {
+    revokedHandler = fn;
+}
+
+function signalRevoked() {
+    if (!revokedHandler) return;
+    const fn = revokedHandler;
+    revokedHandler = null; // fire only once even if multiple endpoints 410 concurrently
+    try { fn(); } catch (err) {
+        logger.error('backend: revoked handler threw', { err: err.message });
+    }
+}
+
+/**
+ * Detect the specific 410 + {"error":"agent_revoked"} shape. A bare 410 from
+ * an upstream proxy (URL gone, CDN purge) must NOT trigger graceful shutdown.
+ *
+ * @param {Response} res
+ * @returns {Promise<boolean>} true if this is a real revoked signal
+ */
+async function isRevokedResponse(res) {
+    if (res.status !== 410) return false;
+    try {
+        const body = await res.clone().json();
+        return body?.error === 'agent_revoked';
+    } catch (_) {
+        return false;
+    }
+}
 
 function authHeader() {
     return `Bearer ${config.agentToken}`;
@@ -32,6 +77,7 @@ async function fetchWithTimeout(url, options) {
  * @param {string} socketId
  * @param {string} channelName  e.g. "private-aspos.agents.7"
  * @returns {Promise<{auth: string}>}
+ * @throws {AgentRevokedError} when the backend reports the agent has been deleted
  */
 export async function channelAuth(socketId, channelName) {
     const url = `${config.backendUrl}/api/brand_admin/broadcasting/agent-auth`;
@@ -48,6 +94,11 @@ export async function channelAuth(socketId, channelName) {
         body: body.toString(),
     });
 
+    if (await isRevokedResponse(res)) {
+        signalRevoked();
+        throw new AgentRevokedError();
+    }
+
     if (!res.ok) {
         const text = await res.text().catch(() => '');
         throw new Error(`Channel auth failed ${res.status}: ${text}`);
@@ -59,15 +110,25 @@ export async function channelAuth(socketId, channelName) {
 /**
  * Send a heartbeat so the backend knows this agent is still alive.
  * Called every 30 s from the main retry interval.
- * Failures are silently swallowed — a missed heartbeat is non-fatal.
+ * Transport failures are silently swallowed — a missed heartbeat is non-fatal.
+ * A 410 agent_revoked response triggers graceful shutdown.
  */
 export async function reportHeartbeat() {
     const url = `${config.backendUrl}/api/brand_admin/print-agents/heartbeat`;
     try {
-        await fetchWithTimeout(url, {
+        const res = await fetchWithTimeout(url, {
             method: 'POST',
             headers: { 'Authorization': authHeader(), 'Accept': 'application/json' },
         });
+
+        if (await isRevokedResponse(res)) {
+            signalRevoked();
+            return;
+        }
+
+        if (!res.ok) {
+            logger.warn('backend: heartbeat rejected', { status: res.status });
+        }
     } catch (_) {
         // non-fatal: backend will mark offline after threshold expires
     }
@@ -96,6 +157,11 @@ export async function reportResult(jobId, status, error = null) {
             },
             body: JSON.stringify(payload),
         });
+
+        if (await isRevokedResponse(res)) {
+            signalRevoked();
+            return;
+        }
 
         if (!res.ok) {
             const text = await res.text().catch(() => '');
