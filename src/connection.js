@@ -6,7 +6,7 @@
  * Reconnects with exponential backoff (1s → 60s max) on disconnect.
  */
 
-import Pusher from 'pusher-js/node.js';
+import { Pusher } from 'pusher-js/node.js';
 import { channelAuth } from './backend.js';
 import config          from './config.js';
 import logger          from './logger.js';
