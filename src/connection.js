@@ -6,10 +6,12 @@
  * Reconnects with exponential backoff (1s → 60s max) on disconnect.
  */
 
-import { Pusher }        from './pusher.js';
 import { channelAuth }   from './backend.js';
 import config          from './config.js';
 import logger          from './logger.js';
+
+const PusherModule = await import('pusher-js');
+const Pusher = PusherModule.default?.Pusher ?? PusherModule.default ?? PusherModule.Pusher ?? PusherModule;
 
 const MIN_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
@@ -32,7 +34,7 @@ export class AgentConnection {
         return this._connected;
     }
 
-    connect() {
+    async connect() {
         if (this._stopped) return;
         if (this._pusher) return;
 
