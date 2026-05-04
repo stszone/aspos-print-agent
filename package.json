@@ -22,7 +22,7 @@
     "url": "https://github.com/stszone/aspos-print-agent/issues"
   },
   "engines": {
-    "node": ">=22.0.0 <23.0.0"
+    "node": ">=24.0.0"
   },
   "dependencies": {
     "sql.js": "^1.12.0",

@@ -31,9 +31,9 @@ function Install-AsposAgent {
 
     $ErrorActionPreference = "Stop"
 
-    $InstallDir  = "C:\Program Files\ASPOS Agent"
-    $NodeMinVer  = 22
-    $NodeDir     = "C:\Program Files\nodejs-${NodeMinVer}"
+    $InstallDir      = "C:\Program Files\ASPOS Agent"
+    $TargetNodeMajor = 24
+    $NodeDir         = "C:\Program Files\nodejs-${TargetNodeMajor}"
     $WinswUrl    = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe"
     $WinswExe    = Join-Path $InstallDir "AsposAgent.exe"
     $ServiceXml  = Join-Path $InstallDir "AsposAgent.xml"
@@ -63,56 +63,112 @@ function Install-AsposAgent {
         }
     }
 
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    function Get-NodeDistEntry {
+        $idx = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing -TimeoutSec 30
+        $entry = $idx | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $TargetNodeMajor } | Select-Object -First 1
+        if (-not $entry) { throw "[aspos-install] ERROR: Could not find Node.js v${TargetNodeMajor}.x in distribution index." }
+        return $entry
+    }
+
+    function Assert-NodeSha256 {
+        param([string]$FilePath, [string]$Filename, [string]$NodeVersion)
+        $shasums = (Invoke-WebRequest -Uri "https://nodejs.org/dist/${NodeVersion}/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 30).Content
+        $expectedHash = (($shasums -split "`n") | Where-Object { $_ -match "\s$([regex]::Escape($Filename))$" } | Select-Object -First 1) -replace '\s.*', ''
+        if ([string]::IsNullOrEmpty($expectedHash)) {
+            Remove-Item $FilePath -Force
+            throw "[aspos-install] ERROR: SHASUMS256 entry for ${Filename} not found in manifest."
+        }
+        $actualHash = (Get-FileHash -Path $FilePath -Algorithm SHA256).Hash
+        if ($actualHash.ToLower() -ne $expectedHash.ToLower()) {
+            Remove-Item $FilePath -Force
+            throw "[aspos-install] ERROR: SHA256 mismatch for ${Filename} — expected ${expectedHash}, got ${actualHash}."
+        }
+    }
+
+    # ZIP install: extracts to $NodeDir, preserving any existing system Node on PATH.
+    # Used when an older Node version is already installed on the machine.
+    function Install-NodeZip {
+        $entry = Get-NodeDistEntry
+        $ver  = $entry.version
+        $file = "node-${ver}-win-x64.zip"
+        $tmp  = Join-Path $env:TEMP "nodejs-${TargetNodeMajor}.zip"
+        Write-Log "Downloading Node.js ${ver} ZIP..."
+        Invoke-WebRequest -Uri "https://nodejs.org/dist/${ver}/${file}" -OutFile $tmp -UseBasicParsing -TimeoutSec 120
+        Assert-NodeSha256 -FilePath $tmp -Filename $file -NodeVersion $ver
+        Write-Log "Extracting to ${NodeDir}..."
+        $extractRoot = Join-Path $env:TEMP "nodejs-${TargetNodeMajor}-extract"
+        if (Test-Path $extractRoot) { Remove-Item $extractRoot -Recurse -Force }
+        Expand-Archive -Path $tmp -DestinationPath $extractRoot -Force
+        Remove-Item $tmp -Force
+        $extracted = Get-ChildItem $extractRoot -Directory | Select-Object -First 1
+        if (-not $extracted) { throw "[aspos-install] ERROR: ZIP extraction produced no directory in $extractRoot." }
+        if (Test-Path $NodeDir) { Remove-Item $NodeDir -Recurse -Force }
+        Move-Item $extracted.FullName $NodeDir
+        Remove-Item $extractRoot -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path "$NodeDir\node.exe")) { throw "[aspos-install] ERROR: ZIP extracted but node.exe not found at $NodeDir." }
+        $got = [int](& "$NodeDir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        if ($got -ne $TargetNodeMajor) { throw "[aspos-install] ERROR: Expected v${TargetNodeMajor}.x but ZIP contained v${got}.x." }
+        Write-Log "Node.js $(& "$NodeDir\node.exe" --version) installed at $NodeDir."
+        return "$NodeDir\node.exe"
+    }
+
+    # MSI install: registers in Add/Remove Programs at the default system path.
+    # Used on fresh machines with no existing Node installation.
+    function Install-NodeMsi {
+        $entry = Get-NodeDistEntry
+        $ver  = $entry.version
+        $file = "node-${ver}-x64.msi"
+        $tmp  = Join-Path $env:TEMP "nodejs-${TargetNodeMajor}.msi"
+        Write-Log "Downloading Node.js ${ver} MSI..."
+        Invoke-WebRequest -Uri "https://nodejs.org/dist/${ver}/${file}" -OutFile $tmp -UseBasicParsing -TimeoutSec 120
+        Assert-NodeSha256 -FilePath $tmp -Filename $file -NodeVersion $ver
+        $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$tmp`" /quiet /norestart"
+        Remove-Item $tmp -Force
+        if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("Path","User")
+        $bin = (Get-Command node -ErrorAction SilentlyContinue).Source
+        if (-not $bin -or -not (Test-Path $bin)) { throw "[aspos-install] ERROR: Node.js MSI installed but node.exe not found on PATH." }
+        $got = [int](& $bin -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        if ($got -ne $TargetNodeMajor) { throw "[aspos-install] ERROR: Expected v${TargetNodeMajor}.x but MSI installed v${got}.x." }
+        Write-Log "Node.js $(& $bin --version) installed at $bin."
+        return $bin
+    }
+
     # ── 1. Node.js ────────────────────────────────────────────────────────────
-    $nodeOk  = $false
     $NodeBin = $null
 
-    # Prefer the pinned Node 22 install dir written by a previous run of this script
+    # 1a. Probe $NodeDir first — present when this script ran previously (ZIP install)
     if (Test-Path "$NodeDir\node.exe") {
         try {
-            $nodeVer = [int](& "$NodeDir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
-            if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true; $NodeBin = "$NodeDir\node.exe" }
+            $v = [int](& "$NodeDir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
+            if ($v -ge $TargetNodeMajor) { $NodeBin = "$NodeDir\node.exe"; Write-Log "Using existing Node.js $v at $NodeDir." }
         } catch { Write-Warning "[aspos-install] Node detection failed for ${NodeDir}: $($_.Exception.Message)" }
     }
 
-    if (-not $nodeOk) {
-        # Use the nodejs.org dist index to install the exact required major.
-        # winget's OpenJS.NodeJS.LTS tracks the active LTS and may install a newer
-        # major (e.g. Node 24 when 22 is required), so we skip it entirely.
-        # Install to $NodeDir so Node 22 coexists with any other version already present.
-        Write-Log "Node.js ${NodeMinVer}.x not found. Downloading MSI from nodejs.org..."
-        $nodeIndex = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing -TimeoutSec 30
-        $nodeEntry = $nodeIndex | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $NodeMinVer } | Select-Object -First 1
-        if (-not $nodeEntry) { throw "[aspos-install] ERROR: Could not find Node.js v${NodeMinVer}.x in distribution index." }
-        $nodeVersion = $nodeEntry.version
-        $msiFilename = "node-${nodeVersion}-x64.msi"
-        $msiUrl  = "https://nodejs.org/dist/${nodeVersion}/${msiFilename}"
-        $msiPath = Join-Path $env:TEMP "nodejs-${NodeMinVer}.msi"
-        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing -TimeoutSec 120
-        $shasums     = (Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 30).Content
-        $expectedHash = (($shasums -split "`n") | Where-Object { $_ -match "\s$([regex]::Escape($msiFilename))$" } | Select-Object -First 1) -replace '\s.*', ''
-        if ([string]::IsNullOrEmpty($expectedHash)) {
-            Remove-Item $msiPath -Force
-            throw "[aspos-install] ERROR: SHASUMS256 entry for ${msiFilename} not found in manifest."
+    # 1b. Check PATH node
+    if (-not $NodeBin) {
+        $pathNode = (Get-Command node -ErrorAction SilentlyContinue).Source
+        if ($pathNode) {
+            $pathVer = -1
+            try { $pathVer = [int](& $pathNode -e 'process.stdout.write(process.versions.node.split(".")[0])') }
+            catch { Write-Warning "[aspos-install] Could not detect version at ${pathNode}: $($_.Exception.Message)" }
+            if ($pathVer -ge $TargetNodeMajor) {
+                $NodeBin = $pathNode
+                Write-Log "Using existing Node.js $pathVer at $pathNode."
+            } elseif ($pathVer -ge 0) {
+                Write-Log "Found Node.js $pathVer at $pathNode — older than required v${TargetNodeMajor}; installing alongside via ZIP."
+                $NodeBin = Install-NodeZip
+            }
         }
-        $actualHash   = (Get-FileHash -Path $msiPath -Algorithm SHA256).Hash
-        if ($actualHash.ToLower() -ne $expectedHash.ToLower()) {
-            Remove-Item $msiPath -Force
-            throw "[aspos-install] ERROR: SHA256 mismatch for ${msiFilename} — expected ${expectedHash}, got ${actualHash}."
-        }
-        $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msiPath`" /quiet /norestart INSTALLDIR=`"$NodeDir`""
-        Remove-Item $msiPath -Force
-        if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
-        if (-not (Test-Path "$NodeDir\node.exe")) {
-            throw "[aspos-install] ERROR: Node.js installed but node.exe not found at $NodeDir."
-        }
-        $installedVer = [int](& "$NodeDir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
-        if ($installedVer -ne $NodeMinVer) {
-            throw "[aspos-install] ERROR: Expected Node.js v${NodeMinVer}.x but MSI installed v${installedVer}.x at $NodeDir."
-        }
-        $NodeBin = "$NodeDir\node.exe"
-    } else {
-        Write-Log "Node.js $(& $NodeBin --version) already installed at $NodeBin."
+    }
+
+    # 1c. No suitable Node found — fresh MSI install
+    if (-not $NodeBin) {
+        Write-Log "No Node.js found — installing Node.js ${TargetNodeMajor}.x via MSI."
+        $NodeBin = Install-NodeMsi
     }
 
     # ── 2. Install directory ──────────────────────────────────────────────────
@@ -137,7 +193,7 @@ function Install-AsposAgent {
     Set-Location $InstallDir
     $NpmCmd = Join-Path (Split-Path $NodeBin) "npm.cmd"
     if (-not (Test-Path $NpmCmd)) {
-        throw "[aspos-install] ERROR: npm.cmd not found at $NpmCmd (NodeBin: $NodeBin). Verify the Node.js installation at $NodeDir."
+        throw "[aspos-install] ERROR: npm.cmd not found at $NpmCmd. Verify the Node.js installation alongside $NodeBin."
     }
     & $NpmCmd ci --omit=dev
     if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'npm ci' failed (exit $LASTEXITCODE)." }
