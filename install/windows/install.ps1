@@ -148,9 +148,21 @@ function Install-AsposAgent {
         } catch { Write-Warning "[aspos-install] Node detection failed for ${NodeDir}: $($_.Exception.Message)" }
     }
 
-    # 1b. Check PATH node
+    # 1b. Check PATH node — only accept system-wide installs under Program Files;
+    #     user-scoped runtimes (nvm, fnm, WinGet user-scope shims) are ignored
+    #     because they can change version or disappear outside our control.
     if (-not $NodeBin) {
         $pathNode = (Get-Command node -ErrorAction SilentlyContinue).Source
+        if ($pathNode) {
+            $pf64 = [System.Environment]::GetFolderPath('ProgramFiles')
+            $pf32 = [System.Environment]::GetFolderPath('ProgramFilesX86')
+            $inProgramFiles = $pathNode.StartsWith($pf64, [System.StringComparison]::OrdinalIgnoreCase) -or
+                              $pathNode.StartsWith($pf32, [System.StringComparison]::OrdinalIgnoreCase)
+            if (-not $inProgramFiles) {
+                Write-Log "Ignoring user-scoped Node.js at $pathNode (nvm/fnm/store shim) — will install a managed runtime."
+                $pathNode = $null
+            }
+        }
         if ($pathNode) {
             $pathVer = -1
             try { $pathVer = [int](& $pathNode -e 'process.stdout.write(process.versions.node.split(".")[0])') }
@@ -228,6 +240,11 @@ LOG_LEVEL=info
     if (-not (Test-Path $WinswExe)) {
         Write-Log "Downloading WinSW service wrapper..."
         Invoke-WebRequest -Uri $WinswUrl -OutFile $WinswExe -UseBasicParsing -TimeoutSec 60
+        $sig = Get-AuthenticodeSignature -FilePath $WinswExe
+        if ($sig.Status -ne 'Valid') {
+            Remove-Item $WinswExe -Force
+            throw "[aspos-install] ERROR: WinSW binary failed Authenticode verification (status: $($sig.Status)). Aborting to prevent running an unverified executable."
+        }
     }
 
     # Copy service descriptor XML and patch it with actual install paths
