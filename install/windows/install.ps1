@@ -42,7 +42,7 @@ function Install-AsposAgent {
     $ServiceXml  = Join-Path $InstallDir "AsposAgent.xml"
     $EnvFile     = Join-Path $InstallDir ".env"
     $LogDir      = Join-Path $InstallDir "logs"
-    $HealthUrl   = "http://localhost:8585/health"
+    $HealthUrl   = "http://127.0.0.1:8585/health"
 
     function Write-Log { param([string]$Msg) Write-Host "[aspos-install] $Msg" }
 
