@@ -57,6 +57,23 @@ export async function channelAuth(socketId, channelName) {
 }
 
 /**
+ * Send a heartbeat so the backend knows this agent is still alive.
+ * Called every 30 s from the main retry interval.
+ * Failures are silently swallowed — a missed heartbeat is non-fatal.
+ */
+export async function reportHeartbeat() {
+    const url = `${config.backendUrl}/api/brand_admin/print-agents/heartbeat`;
+    try {
+        await fetchWithTimeout(url, {
+            method: 'POST',
+            headers: { 'Authorization': authHeader(), 'Accept': 'application/json' },
+        });
+    } catch (_) {
+        // non-fatal: backend will mark offline after threshold expires
+    }
+}
+
+/**
  * Report a print result to the backend.
  *
  * @param {string} jobId
