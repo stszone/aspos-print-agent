@@ -156,7 +156,7 @@ describe('AgentConnection', () => {
         connectionHandlers['connected']?.();
 
         const payload = { job_id: 'xyz', driver: 'network_escpos', payload_b64: 'AA==' };
-        await channelHandlers['App\\Events\\PrintJobReady']?.(payload);
+        await channelHandlers['print_job.ready']?.(payload);
 
         expect(onJob).toHaveBeenCalledWith(payload);
     });
@@ -173,7 +173,7 @@ describe('AgentConnection', () => {
 
         // Must not throw — errors are swallowed inside connection.js
         await expect(
-            Promise.resolve(channelHandlers['App\\Events\\PrintJobReady']?.(payload))
+            Promise.resolve(channelHandlers['print_job.ready']?.(payload))
         ).resolves.not.toThrow();
 
         // Give the microtask queue a tick for the rejection handler to run
