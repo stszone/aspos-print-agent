@@ -25,7 +25,7 @@ The agent connects to the ASPOS backend via a persistent WebSocket (Laravel Reve
 
 Get your **Agent Token** and **Agent ID** from the ASPOS admin panel: **Store Setup → Print Agents → Install Instructions**.
 
-The one-liner install scripts handle everything: Node.js 22 LTS, cloning this repo, writing `.env`, and registering a system service.
+The one-liner install scripts handle everything: Node.js 24 LTS, cloning this repo, writing `.env`, and registering a system service.
 
 ### Raspberry Pi
 
@@ -99,7 +99,7 @@ ASPOS Cloud Backend
 
 | Component | Technology |
 |---|---|
-| Runtime | Node.js 22 LTS |
+| Runtime | Node.js 24 LTS |
 | WebSocket | pusher-js + laravel-echo (Reverb) |
 | Job queue | sql.js (SQLite via WebAssembly — no native compilation) |
 | Logging | winston + winston-daily-rotate-file |
