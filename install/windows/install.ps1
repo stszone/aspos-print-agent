@@ -1,4 +1,4 @@
-# ASPOS Print Agent — Windows PowerShell installer
+﻿# ASPOS Print Agent — Windows PowerShell installer
 # Run in an elevated (Administrator) PowerShell prompt.
 #
 # Usage:
@@ -35,6 +35,9 @@ function Install-AsposAgent {
     $TargetNodeMajor = 24
     $NodeDir         = "C:\Program Files\nodejs-${TargetNodeMajor}"
     $WinswUrl    = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe"
+    # WinSW v2.12.0 binaries are not Authenticode-signed (verified May 2026).
+    # Using SHA256 pinning instead. Update this hash when bumping the WinSW version.
+    $WinswSha256 = "05B82D46AD331CC16BDC00DE5C6332C1EF818DF8CEEFCD49C726553209B3A0DA"
     $WinswExe    = Join-Path $InstallDir "AsposAgent.exe"
     $ServiceXml  = Join-Path $InstallDir "AsposAgent.xml"
     $EnvFile     = Join-Path $InstallDir ".env"
@@ -244,10 +247,11 @@ LOG_LEVEL=info
         Write-Log "Downloading WinSW service wrapper..."
         Invoke-WebRequest -Uri $WinswUrl -OutFile $WinswExe -UseBasicParsing -TimeoutSec 60
     }
-    $sig = Get-AuthenticodeSignature -FilePath $WinswExe
-    if ($sig.Status -ne 'Valid') {
+    Write-Log "Verifying WinSW SHA256..."
+    $actualSha256 = (Get-FileHash -Path $WinswExe -Algorithm SHA256).Hash
+    if ($actualSha256.ToUpper() -ne $WinswSha256.ToUpper()) {
         Remove-Item $WinswExe -Force
-        throw "[aspos-install] ERROR: WinSW binary failed Authenticode verification (status: $($sig.Status)). Aborting to prevent running an unverified executable."
+        throw "[aspos-install] ERROR: WinSW SHA256 mismatch — expected $WinswSha256, got $actualSha256. Aborting."
     }
 
     # Copy service descriptor XML and patch it with actual install paths

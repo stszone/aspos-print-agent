@@ -1,0 +1,4 @@
+# PowerShell scripts must be UTF-8 with BOM for Windows PowerShell 5.1 compatibility.
+# Without BOM, PS5.1 reads the file as the system code page (Windows-1252) and
+# misinterprets multibyte UTF-8 sequences (em-dashes, box-drawing chars, etc.).
+*.ps1 working-tree-encoding=UTF-8 diff=utf-8
