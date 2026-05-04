@@ -32,13 +32,14 @@ function Install-AsposAgent {
     $ErrorActionPreference = "Stop"
 
     $InstallDir  = "C:\Program Files\ASPOS Agent"
+    $NodeMinVer  = 22
+    $NodeDir     = "C:\Program Files\nodejs-${NodeMinVer}"
     $WinswUrl    = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe"
     $WinswExe    = Join-Path $InstallDir "AsposAgent.exe"
     $ServiceXml  = Join-Path $InstallDir "AsposAgent.xml"
     $EnvFile     = Join-Path $InstallDir ".env"
     $LogDir      = Join-Path $InstallDir "logs"
     $HealthUrl   = "http://localhost:8585/health"
-    $NodeMinVer  = 22
 
     function Write-Log { param([string]$Msg) Write-Host "[aspos-install] $Msg" }
 
@@ -63,31 +64,55 @@ function Install-AsposAgent {
     }
 
     # ── 1. Node.js ────────────────────────────────────────────────────────────
-    $nodeOk = $false
-    try {
-        $nodeVer = [int](node -e 'process.stdout.write(process.versions.node.split(".")[0])' -ErrorAction Stop)
-        if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true }
-    } catch { } # ignore: node may not be installed — treat as not present
+    $nodeOk  = $false
+    $NodeBin = $null
+
+    # Prefer the pinned Node 22 install dir written by a previous run of this script
+    if (Test-Path "$NodeDir\node.exe") {
+        try {
+            $nodeVer = [int](& "$NodeDir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
+            if ($nodeVer -eq $NodeMinVer) { $nodeOk = $true; $NodeBin = "$NodeDir\node.exe" }
+        } catch { Write-Warning "[aspos-install] Node detection failed for ${NodeDir}: $($_.Exception.Message)" }
+    }
 
     if (-not $nodeOk) {
         # Use the nodejs.org dist index to install the exact required major.
-        # winget's OpenJS.NodeJS.LTS tracks the active LTS and would install a
-        # newer major (e.g. Node 24 when 22 is required), so we skip it entirely.
+        # winget's OpenJS.NodeJS.LTS tracks the active LTS and may install a newer
+        # major (e.g. Node 24 when 22 is required), so we skip it entirely.
+        # Install to $NodeDir so Node 22 coexists with any other version already present.
         Write-Log "Node.js ${NodeMinVer}.x not found. Downloading MSI from nodejs.org..."
-        $nodeIndex = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing
+        $nodeIndex = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -UseBasicParsing -TimeoutSec 30
         $nodeEntry = $nodeIndex | Where-Object { ([int]($_.version -replace '^v(\d+)\..*','$1')) -eq $NodeMinVer } | Select-Object -First 1
         if (-not $nodeEntry) { throw "[aspos-install] ERROR: Could not find Node.js v${NodeMinVer}.x in distribution index." }
         $nodeVersion = $nodeEntry.version
-        $msiUrl  = "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-x64.msi"
-        $msiPath = Join-Path $env:TEMP "nodejs.msi"
-        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
-        $proc = Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn" -Wait -PassThru
+        $msiFilename = "node-${nodeVersion}-x64.msi"
+        $msiUrl  = "https://nodejs.org/dist/${nodeVersion}/${msiFilename}"
+        $msiPath = Join-Path $env:TEMP "nodejs-${NodeMinVer}.msi"
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing -TimeoutSec 120
+        $shasums     = (Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 30).Content
+        $expectedHash = (($shasums -split "`n") | Where-Object { $_ -match "\s$([regex]::Escape($msiFilename))$" } | Select-Object -First 1) -replace '\s.*', ''
+        if ([string]::IsNullOrEmpty($expectedHash)) {
+            Remove-Item $msiPath -Force
+            throw "[aspos-install] ERROR: SHASUMS256 entry for ${msiFilename} not found in manifest."
+        }
+        $actualHash   = (Get-FileHash -Path $msiPath -Algorithm SHA256).Hash
+        if ($actualHash.ToLower() -ne $expectedHash.ToLower()) {
+            Remove-Item $msiPath -Force
+            throw "[aspos-install] ERROR: SHA256 mismatch for ${msiFilename} — expected ${expectedHash}, got ${actualHash}."
+        }
+        $proc = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$msiPath`" /quiet /norestart INSTALLDIR=`"$NodeDir`""
         Remove-Item $msiPath -Force
         if ($proc.ExitCode -ne 0) { throw "[aspos-install] ERROR: Node.js MSI install failed (exit $($proc.ExitCode))." }
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                    [System.Environment]::GetEnvironmentVariable("Path","User")
+        if (-not (Test-Path "$NodeDir\node.exe")) {
+            throw "[aspos-install] ERROR: Node.js installed but node.exe not found at $NodeDir."
+        }
+        $installedVer = [int](& "$NodeDir\node.exe" -e 'process.stdout.write(process.versions.node.split(".")[0])')
+        if ($installedVer -ne $NodeMinVer) {
+            throw "[aspos-install] ERROR: Expected Node.js v${NodeMinVer}.x but MSI installed v${installedVer}.x at $NodeDir."
+        }
+        $NodeBin = "$NodeDir\node.exe"
     } else {
-        Write-Log "Node.js $(node --version) already installed."
+        Write-Log "Node.js $(& $NodeBin --version) already installed at $NodeBin."
     }
 
     # ── 2. Install directory ──────────────────────────────────────────────────
@@ -110,7 +135,11 @@ function Install-AsposAgent {
         if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git clone' failed (exit $LASTEXITCODE)." }
     }
     Set-Location $InstallDir
-    npm ci --omit=dev
+    $NpmCmd = Join-Path (Split-Path $NodeBin) "npm.cmd"
+    if (-not (Test-Path $NpmCmd)) {
+        throw "[aspos-install] ERROR: npm.cmd not found at $NpmCmd (NodeBin: $NodeBin). Verify the Node.js installation at $NodeDir."
+    }
+    & $NpmCmd ci --omit=dev
     if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'npm ci' failed (exit $LASTEXITCODE)." }
 
     # ── 4. .env ───────────────────────────────────────────────────────────────
@@ -142,13 +171,14 @@ LOG_LEVEL=info
     # Download WinSW if not already present
     if (-not (Test-Path $WinswExe)) {
         Write-Log "Downloading WinSW service wrapper..."
-        Invoke-WebRequest -Uri $WinswUrl -OutFile $WinswExe -UseBasicParsing
+        Invoke-WebRequest -Uri $WinswUrl -OutFile $WinswExe -UseBasicParsing -TimeoutSec 60
     }
 
     # Copy service descriptor XML and patch it with actual install paths
     $srcXml = Join-Path $InstallDir "install\windows\aspos-agent.xml"
     Copy-Item $srcXml $ServiceXml -Force
     $xml = [xml](Get-Content $ServiceXml -Raw)
+    $xml.service.executable = $NodeBin
     $xml.service.workingdirectory = $InstallDir
     $xml.service.log.logpath = $LogDir
     foreach ($node in @($xml.service.SelectNodes("env"))) { $xml.service.RemoveChild($node) | Out-Null }
