@@ -1,5 +1,5 @@
-// Wraps the CJS pusher-js require so the rest of the codebase uses a plain
-// ESM import. createRequire bypasses ESM/CJS interop, which is unreliable for
-// webpack bundles on Windows Node 24 when using static import {Pusher} syntax.
-import { createRequire } from 'module';
-export const Pusher = createRequire(import.meta.url)('pusher-js').Pusher;
+// Dynamic import resolves the CJS module.exports object as mod.default,
+// guaranteeing the Pusher class regardless of cjs-module-lexer behaviour
+// (which is unreliable for webpack bundles on Windows Node 24).
+const mod = await import('pusher-js');
+export const Pusher = mod.default?.Pusher ?? mod.Pusher;
