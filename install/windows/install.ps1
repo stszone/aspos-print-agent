@@ -258,9 +258,9 @@ LOG_LEVEL=info
     $srcXml = Join-Path $InstallDir "install\windows\aspos-agent.xml"
     Copy-Item $srcXml $ServiceXml -Force
     $xml = [xml](Get-Content $ServiceXml -Raw)
-    $xml.service.executable = $NodeBin
-    $xml.service.workingdirectory = $InstallDir
-    $xml.service.log.logpath = $LogDir
+    $xml.service.executable = [string]$NodeBin
+    $xml.service.workingdirectory = [string]$InstallDir
+    $xml.service.log.logpath = [string]$LogDir
     foreach ($node in @($xml.service.SelectNodes("env"))) { $xml.service.RemoveChild($node) | Out-Null }
     $xml.Save($ServiceXml)
 
