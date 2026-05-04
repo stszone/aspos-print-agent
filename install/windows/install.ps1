@@ -240,11 +240,11 @@ LOG_LEVEL=info
     if (-not (Test-Path $WinswExe)) {
         Write-Log "Downloading WinSW service wrapper..."
         Invoke-WebRequest -Uri $WinswUrl -OutFile $WinswExe -UseBasicParsing -TimeoutSec 60
-        $sig = Get-AuthenticodeSignature -FilePath $WinswExe
-        if ($sig.Status -ne 'Valid') {
-            Remove-Item $WinswExe -Force
-            throw "[aspos-install] ERROR: WinSW binary failed Authenticode verification (status: $($sig.Status)). Aborting to prevent running an unverified executable."
-        }
+    }
+    $sig = Get-AuthenticodeSignature -FilePath $WinswExe
+    if ($sig.Status -ne 'Valid') {
+        Remove-Item $WinswExe -Force
+        throw "[aspos-install] ERROR: WinSW binary failed Authenticode verification (status: $($sig.Status)). Aborting to prevent running an unverified executable."
     }
 
     # Copy service descriptor XML and patch it with actual install paths
