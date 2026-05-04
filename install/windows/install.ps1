@@ -293,12 +293,16 @@ LOG_LEVEL=info
                 Write-Log "Done. Manage with: AsposAgent.exe {start|stop|status}"
                 return
             }
-            if ($r.StatusCode -eq 503) {
+        } catch {
+            # Invoke-WebRequest throws on non-2xx responses in PowerShell 5.1.
+            # Check for 503 here — it means the agent is up but Reverb not yet connected.
+            if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 503) {
                 Write-Log "Health check passed. Agent started (Reverb connection pending)."
                 Write-Log "Done. Manage with: AsposAgent.exe {start|stop|status}"
                 return
             }
-        } catch { $lastErrMsg = $_.Exception.Message }
+            $lastErrMsg = $_.Exception.Message
+        }
         Write-Log "  Attempt $i/$retries -- retrying in ${wait}s..."
         Start-Sleep -Seconds $wait
     }
