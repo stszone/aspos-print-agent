@@ -7,6 +7,11 @@
  *   3. Start health endpoint
  *   4. Connect to Reverb and subscribe to agent channel
  *   5. Start buffer retry loop (every 30 s)
+ *
+ * Shutdown is idempotent — SIGTERM, SIGINT and a backend-issued "agent
+ * revoked" signal all funnel through the same path. Exit code 0 tells WinSW
+ * (Windows) and systemd's Restart=on-failure (Linux/Pi) NOT to restart us,
+ * which is the correct behavior when the agent has been deleted server-side.
  */
 
 import 'dotenv/config';
@@ -18,7 +23,7 @@ import { PrintHistory }    from './history.js';
 import { AgentConnection } from './connection.js';
 import { startHealthServer } from './health.js';
 import { processJob }      from './worker.js';
-import { reportResult, reportHeartbeat } from './backend.js';
+import { reportResult, reportHeartbeat, setRevokedHandler } from './backend.js';
 
 const buffer  = await JobBuffer.create();
 const history = await PrintHistory.create();
@@ -67,21 +72,27 @@ const retryInterval = setInterval(() => {
     retryBufferedJobs().catch(err => logger.error('retry: unhandled error', { err: err.message }));
 }, 30_000);
 
-async function shutdown(signal) {
-    logger.info(`shutdown: received ${signal}`);
-    clearInterval(retryInterval);
-    connection.stop();
-    buffer.close();
-    history.close();
+let shuttingDown = false;
+async function shutdown(reason, exitCode = 0) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`shutdown: ${reason}`);
+    try { clearInterval(retryInterval); } catch (_) {}
+    try { connection.stop(); }          catch (_) {}
+    try { buffer.close(); }             catch (_) {}
+    try { history.close(); }            catch (_) {}
+    process.exit(exitCode);
 }
 
-process.on('SIGTERM', async () => {
-    try { await shutdown('SIGTERM'); process.exit(0); }
-    catch (err) { logger.error('shutdown error', { err: err.message }); process.exit(1); }
+// When the backend reports "agent_revoked" (410), retrying is pointless —
+// the agent record is gone and the token will never authenticate again.
+// Exit cleanly so the service manager leaves us stopped.
+setRevokedHandler(() => {
+    logger.error('agent: revoked by backend — shutting down (run uninstall script to remove this service)');
+    shutdown('agent revoked by backend', 0);
 });
-process.on('SIGINT', async () => {
-    try { await shutdown('SIGINT'); process.exit(0); }
-    catch (err) { logger.error('shutdown error', { err: err.message }); process.exit(1); }
-});
+
+process.on('SIGTERM', () => shutdown('SIGTERM', 0));
+process.on('SIGINT',  () => shutdown('SIGINT',  0));
 
 logger.info('agent: started', { agent_id: config.agentId, backend: config.backendUrl });
