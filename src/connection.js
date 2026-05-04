@@ -95,8 +95,11 @@ export class AgentConnection {
             logger.info('connection: subscribed', { channel: channelName });
         });
 
-        // PrintJobReady events broadcast by DispatchPrintJob
-        this._channel.bind('App\\Events\\PrintJobReady', (data) => {
+        // PrintJobReady events broadcast by DispatchPrintJob.
+        // The backend's PrintJobReady::broadcastAs() returns 'print_job.ready'
+        // — that's the wire name. Listening on the FQCN App\Events\PrintJobReady
+        // would silently never fire (Reverb doesn't auto-alias).
+        this._channel.bind('print_job.ready', (data) => {
             logger.info('connection: received PrintJobReady', { job_id: data?.job_id });
             Promise.resolve(this._onJob(data)).catch(err =>
                 logger.error('connection: job handler threw', { err: err.message }),
