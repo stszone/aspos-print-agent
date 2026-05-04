@@ -26,14 +26,20 @@ const {
     AgentRevokedError,
 } = await import('../src/backend.js');
 
+// Mimic Response semantics: clone() returns an independent object with its
+// own json()/text() mocks so consumers can read the body twice (once on the
+// clone for sniffing, once on the original for the real handler). Real fetch
+// errors if you read the same Response body twice — sharing a single mock
+// would mask that, so clone returns a fresh object every time.
 function makeResponse(status, body) {
-    return {
+    const make = () => ({
         status,
         ok:    status >= 200 && status < 300,
-        clone: function () { return this; },
+        clone: () => make(),
         json:  jest.fn().mockResolvedValue(body),
         text:  jest.fn().mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
-    };
+    });
+    return make();
 }
 
 function mockFetchOnce(status, body) {

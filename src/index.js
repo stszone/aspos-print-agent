@@ -73,7 +73,10 @@ const retryInterval = setInterval(() => {
 }, 30_000);
 
 let shuttingDown = false;
-async function shutdown(reason, exitCode = 0) {
+// Plain function — nothing here is async. Marking it async would wrap the
+// return in a Promise that no caller awaits, and process.exit() ends the
+// runtime before any continuation could fire anyway.
+function shutdown(reason, exitCode = 0) {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info(`shutdown: ${reason}`);
