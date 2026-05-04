@@ -1,4 +1,4 @@
-# ASPOS Print Agent — Windows PowerShell installer
+﻿# ASPOS Print Agent — Windows PowerShell installer
 # Run in an elevated (Administrator) PowerShell prompt.
 #
 # Usage:
