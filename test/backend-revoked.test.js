@@ -26,14 +26,27 @@ const {
     AgentRevokedError,
 } = await import('../src/backend.js');
 
-function mockFetchOnce(status, body) {
-    global.fetch = jest.fn().mockResolvedValueOnce({
+function makeResponse(status, body) {
+    return {
         status,
         ok:    status >= 200 && status < 300,
         clone: function () { return this; },
         json:  jest.fn().mockResolvedValue(body),
         text:  jest.fn().mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
-    });
+    };
+}
+
+function mockFetchOnce(status, body) {
+    global.fetch = jest.fn().mockResolvedValueOnce(makeResponse(status, body));
+}
+
+// Queue N responses on a single mock so concurrent fetches each get their own.
+function mockFetchSequence(...responses) {
+    const mock = jest.fn();
+    for (const [status, body] of responses) {
+        mock.mockResolvedValueOnce(makeResponse(status, body));
+    }
+    global.fetch = mock;
 }
 
 describe('backend: agent_revoked detection', () => {
@@ -97,9 +110,15 @@ describe('backend: agent_revoked detection', () => {
     });
 
     test('handler fires only once even when multiple endpoints 410 concurrently', async () => {
-        mockFetchOnce(410, { error: 'agent_revoked' });
-        mockFetchOnce(410, { error: 'agent_revoked' });
-        mockFetchOnce(410, { error: 'agent_revoked' });
+        // All three concurrent fetches need to actually receive a 410. Queue
+        // three responses on one mock — reassigning global.fetch three times
+        // would leave only the last assignment, so the first two callers would
+        // hit an exhausted mock and not exercise the dedup path.
+        mockFetchSequence(
+            [410, { error: 'agent_revoked' }],
+            [410, { error: 'agent_revoked' }],
+            [410, { error: 'agent_revoked' }],
+        );
 
         await Promise.all([
             reportHeartbeat(),
@@ -107,6 +126,7 @@ describe('backend: agent_revoked detection', () => {
             channelAuth('1.2', 'private-aspos.agents.7').catch(() => {}),
         ]);
 
+        expect(global.fetch).toHaveBeenCalledTimes(3);
         expect(revokedSpy).toHaveBeenCalledTimes(1);
     });
 
