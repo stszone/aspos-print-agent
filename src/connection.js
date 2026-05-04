@@ -6,7 +6,11 @@
  * Reconnects with exponential backoff (1s → 60s max) on disconnect.
  */
 
-import { Pusher } from 'pusher-js/node.js';
+// pusher-js/node.js is a CJS module. Named-export static analysis (cjs-module-lexer)
+// is unreliable for webpack bundles on some platforms. Use default + runtime property
+// access to guarantee the constructor is available everywhere (Linux, macOS, Windows).
+import _pusherLib from 'pusher-js/node.js';
+const Pusher = _pusherLib.Pusher;
 import { channelAuth } from './backend.js';
 import config          from './config.js';
 import logger          from './logger.js';
