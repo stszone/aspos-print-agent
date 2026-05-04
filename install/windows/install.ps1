@@ -90,7 +90,7 @@ function Install-AsposAgent {
         $msiPath = Join-Path $env:TEMP "nodejs-${NodeMinVer}.msi"
         Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing -TimeoutSec 120
         $shasums     = (Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 30).Content
-        $expectedHash = (($shasums -split "`n") | Where-Object { $_ -match "\s${msiFilename}$" } | Select-Object -First 1) -replace '\s.*', ''
+        $expectedHash = (($shasums -split "`n") | Where-Object { $_ -match "\s$([regex]::Escape($msiFilename))$" } | Select-Object -First 1) -replace '\s.*', ''
         if ([string]::IsNullOrEmpty($expectedHash)) {
             Remove-Item $msiPath -Force
             throw "[aspos-install] ERROR: SHASUMS256 entry for ${msiFilename} not found in manifest."
