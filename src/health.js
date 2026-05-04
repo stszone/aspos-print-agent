@@ -111,7 +111,10 @@ export function startHealthServer(getStatus, history, onReprint) {
         res.end(JSON.stringify({ status: 'not_found' }));
     });
 
-    server.listen(config.healthPort, '127.0.0.1', () => {
+    // Bind to all interfaces so both 127.0.0.1 and ::1 work.
+    // On Windows, 'localhost' resolves to ::1 (IPv6); binding only to 127.0.0.1
+    // causes the installer health check and admin UI to fail on Windows hosts.
+    server.listen(config.healthPort, () => {
         logger.info('health: listening', { port: config.healthPort });
     });
 
