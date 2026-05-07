@@ -60,6 +60,36 @@ Full install script source is available at `https://aspos.io/install/agent/lates
 
 ---
 
+## Uninstallation
+
+The uninstall scripts stop the service, remove the install directory, and (on \*nix) delete the `aspos-agent` service user. They are idempotent — safe to run if no agent is installed. The agent record on the ASPOS dashboard must be deleted separately.
+
+### Raspberry Pi
+
+```bash
+curl -fsSL https://aspos.io/install/agent/raspberry-pi/uninstall.sh | sudo bash
+```
+
+### Linux (Debian/Ubuntu/RHEL/Fedora)
+
+```bash
+curl -fsSL https://aspos.io/install/agent/linux/uninstall.sh | sudo bash
+```
+
+### macOS
+
+```bash
+curl -fsSL https://aspos.io/install/agent/macos/uninstall.sh | sudo bash
+```
+
+### Windows (PowerShell — run as Administrator)
+
+```powershell
+iwr -useb https://aspos.io/install/agent/windows/uninstall.ps1 | iex; Uninstall-AsposAgent
+```
+
+---
+
 ## Architecture
 
 ```text

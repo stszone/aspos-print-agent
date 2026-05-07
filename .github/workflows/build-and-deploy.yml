@@ -57,15 +57,19 @@ jobs:
           [ -n "$VERSION" ] && [ "$VERSION" != "null" ] || { echo "ERROR: could not read version from package.json"; exit 1; }
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
-      - name: Stage install scripts
+      - name: Stage install + uninstall scripts
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist/linux dist/macos dist/raspberry-pi dist/windows
-          cp install/linux/install.sh        dist/linux/install.sh
-          cp install/macos/install.sh        dist/macos/install.sh
-          cp install/raspberry-pi/install.sh dist/raspberry-pi/install.sh
-          cp install/windows/install.ps1     dist/windows/install.ps1
+          cp install/linux/install.sh          dist/linux/install.sh
+          cp install/linux/uninstall.sh        dist/linux/uninstall.sh
+          cp install/macos/install.sh          dist/macos/install.sh
+          cp install/macos/uninstall.sh        dist/macos/uninstall.sh
+          cp install/raspberry-pi/install.sh   dist/raspberry-pi/install.sh
+          cp install/raspberry-pi/uninstall.sh dist/raspberry-pi/uninstall.sh
+          cp install/windows/install.ps1       dist/windows/install.ps1
+          cp install/windows/uninstall.ps1     dist/windows/uninstall.ps1
 
       - name: Write latest.json
         shell: bash
@@ -73,6 +77,9 @@ jobs:
           set -euo pipefail
           RELEASED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           BASE_URL="https://aspos.io/install/agent"
+          # Schema is additive: existing `scripts` map is unchanged so legacy
+          # consumers (InstallInstructionsService::scriptUrl) keep working.
+          # `uninstall_scripts` is read by the new uninstallUrl() method.
           jq -n \
             --arg version    "$VERSION" \
             --arg released_at "$RELEASED_AT" \
@@ -85,6 +92,12 @@ jobs:
                 "macos":        "\($base_url)/macos/install.sh",
                 "raspberry-pi": "\($base_url)/raspberry-pi/install.sh",
                 "windows":      "\($base_url)/windows/install.ps1"
+              },
+              uninstall_scripts: {
+                "linux":        "\($base_url)/linux/uninstall.sh",
+                "macos":        "\($base_url)/macos/uninstall.sh",
+                "raspberry-pi": "\($base_url)/raspberry-pi/uninstall.sh",
+                "windows":      "\($base_url)/windows/uninstall.ps1"
               }
             }' > dist/latest.json
 
