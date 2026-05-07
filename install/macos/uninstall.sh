@@ -23,11 +23,20 @@ die() { echo "[aspos-uninstall] ERROR: $*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "Run as root: sudo bash uninstall.sh"
 
 # ── 1. launchd service ────────────────────────────────────────────────────────
+# `launchctl unload` was deprecated in macOS Ventura (13) — Apple replaced it
+# with `launchctl bootout`. Try bootout first; fall back to unload only if
+# bootout fails (older macOS where bootout doesn't recognize the service).
+# Surface both errors to the log so a stuck service is visible in install logs.
 if launchctl list 2>/dev/null | grep -q "com.aspos.agent"; then
-    log "Unloading launchd service..."
-    launchctl unload "$PLIST_DEST" 2>/dev/null || true
+    log "Stopping launchd service via 'launchctl bootout system'..."
+    if ! bootout_err=$(launchctl bootout "system/com.aspos.agent" 2>&1); then
+        log "bootout failed: $bootout_err — falling back to legacy 'launchctl unload'"
+        if ! unload_err=$(launchctl unload "$PLIST_DEST" 2>&1); then
+            log "unload also failed: $unload_err — continuing with file removal anyway"
+        fi
+    fi
 else
-    log "launchd service not loaded — skipping unload."
+    log "launchd service not loaded — skipping stop."
 fi
 
 if [ -f "$PLIST_DEST" ]; then
