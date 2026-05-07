@@ -59,7 +59,9 @@ fi
 # multi-agent-on-one-machine caveat (rare; not yet supported).
 if dscl . -read "/Users/$SERVICE_USER" &>/dev/null; then
     log "Removing service user: $SERVICE_USER"
-    dscl . -delete "/Users/$SERVICE_USER" 2>/dev/null || true
+    if ! dscl_err=$(dscl . -delete "/Users/$SERVICE_USER" 2>&1); then
+        log "dscl delete failed for '$SERVICE_USER': $dscl_err — continuing"
+    fi
 else
     log "Service user '$SERVICE_USER' not present — skipping."
 fi
