@@ -36,6 +36,7 @@ jest.unstable_mockModule('../src/config.js', () => ({
         reverbPort:   443,
         reverbScheme: 'https',
         agentId:      7,
+        tenantId:     'testtenant',
         backendUrl:   'http://localhost',
         agentToken:   'aspos_agt_test',
         healthPort:   8585,
@@ -74,7 +75,7 @@ describe('AgentConnection', () => {
         const conn = new AgentConnection(jest.fn());
         conn.connect();
         connectionHandlers['connected']?.();
-        expect(mockPusher.subscribe).toHaveBeenCalledWith('private-aspos.agents.7');
+        expect(mockPusher.subscribe).toHaveBeenCalledWith('private-aspos.agents.testtenant.7');
     });
 
     test('isConnected is true after connected event', () => {

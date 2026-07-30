@@ -31,6 +31,11 @@ export default {
     reverbPort:   parseEnvInt('REVERB_PORT',  process.env.REVERB_PORT  ?? '443',  { min: 1, max: 65535 }),
     reverbScheme: process.env.REVERB_SCHEME ?? 'https',
     agentId:      parseEnvInt('AGENT_ID',     required('AGENT_ID'),               { min: 1 }),
+    // Tenant slug (e.g. "abushakra") — the broadcast channel is tenant-scoped
+    // (private-aspos.agents.{tenantId}.{agentId}) because per-tenant agent ids
+    // collide on the shared Reverb app. Required since agent 1.1.0; install
+    // scripts write it from the dashboard-generated command.
+    tenantId:     required('TENANT_ID'),
     agentToken:   required('AGENT_TOKEN'),
     healthPort:   parseEnvInt('HEALTH_PORT',  process.env.HEALTH_PORT  ?? '8585', { min: 1, max: 65535 }),
     logLevel:     process.env.LOG_LEVEL ?? 'info',

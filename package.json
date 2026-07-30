@@ -1,6 +1,6 @@
 {
   "name": "aspos-print-agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "ASPOS Print Agent — relays ESC/POS print jobs from ASPOS backend to local printers",
   "type": "module",
   "main": "src/index.js",
@@ -11,7 +11,12 @@
     "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch",
     "lint": "eslint src test"
   },
-  "keywords": ["aspos", "print", "escpos", "pos"],
+  "keywords": [
+    "aspos",
+    "print",
+    "escpos",
+    "pos"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
