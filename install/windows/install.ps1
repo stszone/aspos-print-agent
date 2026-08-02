@@ -50,6 +50,30 @@ function Install-AsposAgent {
 
     function Write-Log { param([string]$Msg) Write-Host "[aspos-install] $Msg" }
 
+    # `#Requires -RunAsAdministrator` is ignored when this file is loaded via
+    # `iwr … | iex` (it only applies to script-file invocation). Check in-process
+    # so non-elevated shells fail with clear steps instead of a cryptic
+    # `git pull` / Permission denied under Program Files.
+    function Test-IsAdministrator {
+        $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    }
+    if (-not (Test-IsAdministrator)) {
+        throw @"
+[aspos-install] ERROR: Not running as Administrator.
+
+The agent installs under '$InstallDir', which requires elevated rights.
+Without admin, updates fail with: cannot open '.git/FETCH_HEAD': Permission denied.
+
+How to fix:
+  1. Close this PowerShell window.
+  2. Start menu → type Windows PowerShell → right-click → Run as administrator.
+  3. Paste the install command from the ASPOS dashboard again (copy a fresh
+     command if you need a new token).
+"@
+    }
+
     # Validate required parameters
     if ([string]::IsNullOrEmpty($ReverbAppKey)) {
         throw "[aspos-install] ERROR: -ReverbAppKey is required. Obtain it from your ASPOS dashboard."
@@ -198,10 +222,33 @@ function Install-AsposAgent {
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         throw "[aspos-install] ERROR: git is not installed. Install Git from https://git-scm.com/download/win and re-run."
     }
+
+    # Stop the service before touching the install tree (git pull / npm ci),
+    # otherwise Node or WinSW can hold files open and confuse ACL failures.
+    if (Test-Path $WinswExe) {
+        Write-Log "Stopping existing agent service (if running)..."
+        & $WinswExe stop 2>$null
+    } elseif (Get-Service -Name "AsposAgent" -ErrorAction SilentlyContinue) {
+        Write-Log "Stopping existing AsposAgent Windows service..."
+        Stop-Service -Name "AsposAgent" -Force -ErrorAction SilentlyContinue
+    }
+
     if (Test-Path (Join-Path $InstallDir ".git")) {
         Write-Log "Updating existing installation..."
         git -C $InstallDir pull --ff-only
-        if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git pull' failed (exit $LASTEXITCODE)." }
+        if ($LASTEXITCODE -ne 0) {
+            throw @"
+[aspos-install] ERROR: 'git pull' failed (exit $LASTEXITCODE).
+
+Common cause: this PowerShell is not elevated, or '$InstallDir' is owned by
+another Windows user from a previous install.
+
+How to fix (elevated PowerShell):
+  Stop-Service AsposAgent -ErrorAction SilentlyContinue
+  Remove-Item '$InstallDir' -Recurse -Force
+  # then paste the ASPOS dashboard install command again
+"@
+        }
     } else {
         if (Test-Path $InstallDir) {
             Write-Log "Removing broken installation at $InstallDir..."
@@ -209,7 +256,9 @@ function Install-AsposAgent {
         }
         Write-Log "Cloning ASPOS Print Agent to $InstallDir..."
         git clone https://github.com/stszone/aspos-print-agent.git $InstallDir
-        if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'git clone' failed (exit $LASTEXITCODE)." }
+        if ($LASTEXITCODE -ne 0) {
+            throw "[aspos-install] ERROR: 'git clone' failed (exit $LASTEXITCODE). Re-run in an elevated PowerShell (Run as administrator)."
+        }
     }
     Set-Location $InstallDir
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null

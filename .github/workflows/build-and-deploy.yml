@@ -53,6 +53,16 @@ jobs:
           done
           echo "OK: all install scripts accept and persist TENANT_ID"
 
+      - name: Guard Windows installer asserts elevation
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qF 'Test-IsAdministrator' install/windows/install.ps1 \
+            || { echo "ERROR: install/windows/install.ps1 missing Test-IsAdministrator"; exit 1; }
+          grep -qF 'Not running as Administrator' install/windows/install.ps1 \
+            || { echo "ERROR: install/windows/install.ps1 missing elevation error copy"; exit 1; }
+          echo "OK: Windows installer asserts elevation with actionable error"
+
   # ---------------------------------------------------------------------------
   # Job 2: Deploy to AS POS APP SERVER
   # ---------------------------------------------------------------------------

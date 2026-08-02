@@ -50,10 +50,14 @@ curl -fsSL https://aspos.io/install/agent/macos/install.sh | \
 
 ### Windows (PowerShell — run as Administrator)
 
+Open **Windows PowerShell as Administrator** (Start → right-click → Run as administrator).
+A normal (non-elevated) window fails when writing under `C:\Program Files\ASPOS Agent`.
+
 ```powershell
 iwr -useb https://aspos.io/install/agent/windows/install.ps1 | iex
 Install-AsposAgent -Token "<AGENT_TOKEN>" -AgentId <AGENT_ID> `
-  -BackendUrl "https://pos.yourbrand.com" -ReverbAppKey "<REVERB_APP_KEY>"
+  -TenantId "<TENANT_SLUG>" -BackendUrl "https://pos.yourbrand.com" `
+  -ReverbAppKey "<REVERB_APP_KEY>"
 ```
 
 Full install script source is available at `https://aspos.io/install/agent/latest.json`.
