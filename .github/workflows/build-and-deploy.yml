@@ -14,9 +14,9 @@ jobs:
   # ---------------------------------------------------------------------------
   test:
     name: Run Tests
-    # Self-hosted only — GitHub-hosted minutes are exhausted; ubuntu-latest
-    # fails in ~2s with a billing error (not a code failure).
-    runs-on: [self-hosted, aspos]
+    # No self-hosted runners on this repo — use ubuntu-latest for test+deploy.
+    # (stszone/aspos runners are repo-scoped and do not pick up these jobs.)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -60,7 +60,7 @@ jobs:
     name: Deploy to AS POS APP SERVER
     needs: test
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, aspos]
+    runs-on: ubuntu-latest
     concurrency:
       group: deploy-${{ github.ref }}
       cancel-in-progress: false

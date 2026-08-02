@@ -8,8 +8,9 @@ on:
 
 jobs:
   test:
-    # Self-hosted only — GitHub-hosted minutes are exhausted on this org.
-    runs-on: [self-hosted, aspos]
+    # This repo has no self-hosted runners registered (only stszone/aspos does).
+    # ubuntu-latest still runs here; keep the TENANT_ID contract guard either way.
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
