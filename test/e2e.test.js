@@ -115,7 +115,7 @@ describe('channelAuth() — real HTTP to mock backend', () => {
     });
 
     test('sends Authorization header and returns auth token from server', async () => {
-        const result = await channelAuth('socket.123', 'private-aspos.agents.7');
+        const result = await channelAuth('socket.123', 'private-aspos.agents.testtenant.7');
 
         expect(result).toEqual({ auth: 'mock_key:mock_sig' });
         expect(received.auth).toHaveLength(1);
@@ -123,7 +123,7 @@ describe('channelAuth() — real HTTP to mock backend', () => {
         const req = received.auth[0];
         expect(req.headers.authorization).toBe('Bearer aspos_agt_test');
         expect(req.body).toContain('socket_id=socket.123');
-        expect(req.body).toContain('channel_name=private-aspos.agents.7');
+        expect(req.body).toContain('channel_name=private-aspos.agents.testtenant.7');
     });
 
     test('throws on non-200 response', async () => {
@@ -132,7 +132,7 @@ describe('channelAuth() — real HTTP to mock backend', () => {
         port = await listenAsync(server);
         mockBackendUrl = `http://127.0.0.1:${port}`;
 
-        await expect(channelAuth('socket.1', 'private-aspos.agents.7'))
+        await expect(channelAuth('socket.1', 'private-aspos.agents.testtenant.7'))
             .rejects.toThrow(/401/);
     });
 });

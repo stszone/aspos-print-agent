@@ -83,7 +83,7 @@ export class AgentConnection {
     }
 
     _subscribe() {
-        const channelName = `private-aspos.agents.${config.agentId}`;
+        const channelName = `private-aspos.agents.${config.tenantId}.${config.agentId}`;
         this._channel?.unbind_all?.();
         this._channel = this._pusher.subscribe(channelName);
 

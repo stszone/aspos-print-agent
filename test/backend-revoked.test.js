@@ -70,7 +70,7 @@ describe('backend: agent_revoked detection', () => {
     test('channelAuth throws AgentRevokedError on 410 + agent_revoked body', async () => {
         mockFetchOnce(410, { error: 'agent_revoked' });
 
-        await expect(channelAuth('123.456', 'private-aspos.agents.7'))
+        await expect(channelAuth('123.456', 'private-aspos.agents.testtenant.7'))
             .rejects.toBeInstanceOf(AgentRevokedError);
 
         expect(revokedSpy).toHaveBeenCalledTimes(1);
@@ -129,7 +129,7 @@ describe('backend: agent_revoked detection', () => {
         await Promise.all([
             reportHeartbeat(),
             reportResult('job_a', 'ok'),
-            channelAuth('1.2', 'private-aspos.agents.7').catch(() => {}),
+            channelAuth('1.2', 'private-aspos.agents.testtenant.7').catch(() => {}),
         ]);
 
         expect(global.fetch).toHaveBeenCalledTimes(3);
@@ -139,7 +139,7 @@ describe('backend: agent_revoked detection', () => {
     test('200 OK does not trigger handler', async () => {
         mockFetchOnce(200, { auth: 'key:sig' });
 
-        await channelAuth('1.2', 'private-aspos.agents.7');
+        await channelAuth('1.2', 'private-aspos.agents.testtenant.7');
 
         expect(revokedSpy).not.toHaveBeenCalled();
     });

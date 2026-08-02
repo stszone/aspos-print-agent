@@ -14,6 +14,8 @@ jobs:
   # ---------------------------------------------------------------------------
   test:
     name: Run Tests
+    # No self-hosted runners on this repo — use ubuntu-latest for test+deploy.
+    # (stszone/aspos runners are repo-scoped and do not pick up these jobs.)
     runs-on: ubuntu-latest
 
     steps:
@@ -32,6 +34,25 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Contract: dashboard installInstructions (aspos PrintAgentController)
+      # emits -TenantId / TENANT_ID as arg 3. Scripts that lag that contract
+      # break every tenant's paste-from-UI install (Aug 2026 outage).
+      - name: Guard install scripts accept TENANT_ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qE '\[string\]\$TenantId' install/windows/install.ps1 \
+            || { echo "ERROR: install/windows/install.ps1 missing -TenantId param"; exit 1; }
+          grep -qE 'TENANT_ID=\$TenantId' install/windows/install.ps1 \
+            || { echo "ERROR: install/windows/install.ps1 does not write TENANT_ID to .env"; exit 1; }
+          for os in linux macos raspberry-pi; do
+            grep -qF 'TENANT_ID="${3' "install/${os}/install.sh" \
+              || { echo "ERROR: install/${os}/install.sh missing TENANT_ID as arg 3"; exit 1; }
+            grep -qF 'TENANT_ID=${TENANT_ID}' "install/${os}/install.sh" \
+              || { echo "ERROR: install/${os}/install.sh does not write TENANT_ID to .env"; exit 1; }
+          done
+          echo "OK: all install scripts accept and persist TENANT_ID"
+
   # ---------------------------------------------------------------------------
   # Job 2: Deploy to AS POS APP SERVER
   # ---------------------------------------------------------------------------
@@ -47,9 +68,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install jq
-        run: sudo apt-get install -y jq
 
       - name: Read version
         run: |
@@ -101,22 +119,47 @@ jobs:
               }
             }' > dist/latest.json
 
-      - name: Setup SSH
+      # Runners live on the apps host. Prefer a local rsync into the serve
+      # directory (no SSH). Fall back to the restricted deploy-key rsync for
+      # any future off-box runner.
+      - name: Publish to aspos-installs
+        shell: bash
         run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          echo "${{ secrets.ASPOS_APPS_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          echo "${{ secrets.KNOWN_HOST_KEY }}" >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          set -euo pipefail
+          DEST="${{ secrets.ASPOS_APPS_PATH }}"
+          if [ -z "$DEST" ]; then DEST="/var/www/aspos-installs"; fi
+          if [ -d "$DEST" ] && [ -w "$DEST" ]; then
+            echo "Local publish → $DEST"
+            rsync -rlpt ./dist/ "$DEST/"
+          else
+            echo "Remote publish via SSH → ${{ secrets.ASPOS_APPS_USER }}@${{ secrets.ASPOS_APPS_HOST }}:$DEST"
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            echo "${{ secrets.ASPOS_APPS_SSH_KEY }}" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            echo "${{ secrets.KNOWN_HOST_KEY }}" >> ~/.ssh/known_hosts
+            chmod 644 ~/.ssh/known_hosts
+            rsync -rlptz \
+              -e "ssh -i ~/.ssh/deploy_key -p 22 -o StrictHostKeyChecking=yes" \
+              ./dist/ \
+              "${{ secrets.ASPOS_APPS_USER }}@${{ secrets.ASPOS_APPS_HOST }}:${DEST}/"
+            rm -f ~/.ssh/deploy_key
+          fi
 
-      - name: Upload via rsync
+      - name: Verify live install scripts serve TENANT_ID contract
+        shell: bash
         run: |
-          rsync -rlptz \
-            -e "ssh -i ~/.ssh/deploy_key -p 22 -o StrictHostKeyChecking=yes" \
-            ./dist/ \
-            ${{ secrets.ASPOS_APPS_USER }}@${{ secrets.ASPOS_APPS_HOST }}:${{ secrets.ASPOS_APPS_PATH }}/
-
-      - name: Cleanup SSH key
-        if: always()
-        run: rm -f ~/.ssh/deploy_key
+          set -euo pipefail
+          # Bust any intermediary cache; scripts themselves are Cache-Control: no-cache.
+          PS1=$(curl -fsSL "https://aspos.io/install/agent/windows/install.ps1?t=$(date +%s)")
+          echo "$PS1" | grep -qE '\[string\]\$TenantId' \
+            || { echo "ERROR: live windows/install.ps1 missing -TenantId after publish"; exit 1; }
+          echo "$PS1" | grep -qE 'TENANT_ID=\$TenantId' \
+            || { echo "ERROR: live windows/install.ps1 missing TENANT_ID=.env write after publish"; exit 1; }
+          SH=$(curl -fsSL "https://aspos.io/install/agent/linux/install.sh?t=$(date +%s)")
+          echo "$SH" | grep -qF 'TENANT_ID="${3' \
+            || { echo "ERROR: live linux/install.sh missing TENANT_ID as arg 3 after publish"; exit 1; }
+          VER=$(curl -fsSL "https://aspos.io/install/agent/latest.json?t=$(date +%s)" | jq -r .version)
+          echo "Live latest.json version=$VER"
+          [ "$VER" = "$VERSION" ] || { echo "ERROR: latest.json version '$VER' != package.json '$VERSION'"; exit 1; }
+          echo "OK: live install host matches $VERSION and TENANT_ID contract"

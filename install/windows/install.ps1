@@ -2,11 +2,11 @@
 # Run in an elevated (Administrator) PowerShell prompt.
 #
 # Usage:
-#   Install-AsposAgent -Token <token> -AgentId <id> [-BackendUrl <url>] [-ReverbAppKey <key>] [-ReverbHost <host>]
+#   Install-AsposAgent -Token <token> -AgentId <id> -TenantId <slug> [-BackendUrl <url>] [-ReverbAppKey <key>] [-ReverbHost <host>]
 #
 # One-liner from ASPOS UI (copy-paste into elevated PowerShell):
 #   iwr -useb https://aspos.io/install/agent/windows/install.ps1 | iex; `
-#     Install-AsposAgent -Token "aspos_agt_xxx" -AgentId 42 -BackendUrl "https://pos.mybrand.com" -ReverbAppKey "rev_key_xxx"
+#     Install-AsposAgent -Token "aspos_agt_xxx" -AgentId 42 -TenantId "abushakra" -BackendUrl "https://pos.mybrand.com" -ReverbAppKey "rev_key_xxx"
 
 #Requires -RunAsAdministrator
 
@@ -20,6 +20,10 @@ function Install-AsposAgent {
         [Parameter(Mandatory=$true)]
         [ValidateRange(1, [int]::MaxValue)]
         [int]$AgentId,
+
+        [Parameter(Mandatory=$true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TenantId,
 
         [ValidateNotNullOrEmpty()]
         [string]$BackendUrl    = "https://aspos.io",
@@ -226,6 +230,7 @@ REVERB_HOST=$ReverbHost
 REVERB_PORT=$ReverbPort
 REVERB_SCHEME=$ReverbScheme
 AGENT_ID=$AgentId
+TENANT_ID=$TenantId
 AGENT_TOKEN=$Token
 HEALTH_PORT=8585
 LOG_LEVEL=info

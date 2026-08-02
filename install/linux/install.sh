@@ -3,19 +3,20 @@
 # Supports: Debian/Ubuntu (apt), Fedora/RHEL/CentOS (dnf/yum)
 #
 # Usage:
-#   sudo bash install.sh <AGENT_TOKEN> <AGENT_ID> [BACKEND_URL] [REVERB_APP_KEY] [REVERB_HOST]
+#   sudo bash install.sh <AGENT_TOKEN> <AGENT_ID> <TENANT_ID> [BACKEND_URL] [REVERB_APP_KEY] [REVERB_HOST]
 #
 # Example (pipe from ASPOS UI command):
 #   curl -fsSL https://aspos.io/install/agent/linux/install.sh | \
-#     sudo bash -s -- aspos_agt_xxx 42 https://pos.mybrand.com rev_key_xxx
+#     sudo bash -s -- aspos_agt_xxx 42 abushakra https://pos.mybrand.com rev_key_xxx
 
 set -euo pipefail
 
 AGENT_TOKEN="${1:-}"
 AGENT_ID="${2:-}"
-BACKEND_URL="${3:-https://aspos.io}"
-REVERB_APP_KEY="${4:-}"
-REVERB_HOST="${5:-}"
+TENANT_ID="${3:-}"
+BACKEND_URL="${4:-https://aspos.io}"
+REVERB_APP_KEY="${5:-}"
+REVERB_HOST="${6:-}"
 INSTALL_DIR="/opt/aspos-agent"
 SERVICE_FILE="/etc/systemd/system/aspos-agent.service"
 NODE_MIN_VERSION="22"
@@ -30,8 +31,9 @@ die()  { echo "[aspos-install] ERROR: $*" >&2; exit 1; }
 # ── 0. Validate ───────────────────────────────────────────────────────────────
 [ -n "$AGENT_TOKEN" ] || die "AGENT_TOKEN is required (arg 1)."
 [ -n "$AGENT_ID" ]    || die "AGENT_ID is required (arg 2)."
+[ -n "$TENANT_ID" ]  || die "TENANT_ID is required (arg 3) — the tenant slug, e.g. abushakra."
 [[ "$AGENT_ID" =~ ^[1-9][0-9]*$ ]] || die "AGENT_ID must be a positive integer, got: '${AGENT_ID}'."
-[ -n "$REVERB_APP_KEY" ] || die "REVERB_APP_KEY is required (arg 4)."
+[ -n "$REVERB_APP_KEY" ] || die "REVERB_APP_KEY is required (arg 5)."
 [ "$(id -u)" -eq 0 ]  || die "Run as root: sudo bash install.sh ..."
 
 # Derive REVERB_HOST from BACKEND_URL if not supplied
@@ -99,6 +101,7 @@ REVERB_HOST=${REVERB_HOST}
 REVERB_PORT=443
 REVERB_SCHEME=https
 AGENT_ID=${AGENT_ID}
+TENANT_ID=${TENANT_ID}
 AGENT_TOKEN=${AGENT_TOKEN}
 HEALTH_PORT=8585
 LOG_LEVEL=info
