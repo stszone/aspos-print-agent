@@ -56,3 +56,15 @@ jobs:
               || { echo "ERROR: install/${os}/install.sh does not write TENANT_ID to .env"; exit 1; }
           done
           echo "OK: all install scripts accept and persist TENANT_ID"
+
+      # iwr|iex ignores #Requires -RunAsAdministrator; the function must
+      # assert elevation itself or users hit cryptic git Permission denied.
+      - name: Guard Windows installer asserts elevation
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qF 'Test-IsAdministrator' install/windows/install.ps1 \
+            || { echo "ERROR: install/windows/install.ps1 missing Test-IsAdministrator"; exit 1; }
+          grep -qF 'Not running as Administrator' install/windows/install.ps1 \
+            || { echo "ERROR: install/windows/install.ps1 missing elevation error copy"; exit 1; }
+          echo "OK: Windows installer asserts elevation with actionable error"
