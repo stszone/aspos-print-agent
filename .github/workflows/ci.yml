@@ -8,7 +8,8 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Self-hosted only — GitHub-hosted minutes are exhausted on this org.
+    runs-on: [self-hosted, aspos]
 
     steps:
       - uses: actions/checkout@v4
@@ -35,3 +36,22 @@ jobs:
             echo "       This has regressed in PR #6, #8, #9. See fix/node-version-split-dot."
             exit 1
           fi
+
+      # Keep install script argv in lockstep with aspos PrintAgentController
+      # installInstructions (TENANT_ID / -TenantId). Drift here breaks every
+      # tenant's paste-from-UI install.
+      - name: Guard install scripts accept TENANT_ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qE '\[string\]\$TenantId' install/windows/install.ps1 \
+            || { echo "ERROR: install/windows/install.ps1 missing -TenantId param"; exit 1; }
+          grep -qE 'TENANT_ID=\$TenantId' install/windows/install.ps1 \
+            || { echo "ERROR: install/windows/install.ps1 does not write TENANT_ID to .env"; exit 1; }
+          for os in linux macos raspberry-pi; do
+            grep -qF 'TENANT_ID="${3' "install/${os}/install.sh" \
+              || { echo "ERROR: install/${os}/install.sh missing TENANT_ID as arg 3"; exit 1; }
+            grep -qF 'TENANT_ID=${TENANT_ID}' "install/${os}/install.sh" \
+              || { echo "ERROR: install/${os}/install.sh does not write TENANT_ID to .env"; exit 1; }
+          done
+          echo "OK: all install scripts accept and persist TENANT_ID"
