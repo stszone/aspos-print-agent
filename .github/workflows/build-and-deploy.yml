@@ -63,6 +63,17 @@ jobs:
             || { echo "ERROR: install/windows/install.ps1 missing elevation error copy"; exit 1; }
           echo "OK: Windows installer asserts elevation with actionable error"
 
+      # Dry run of the self-update package build (same script the deploy job uses):
+      # fails on native addons, empty hash, or an incomplete tree.
+      - name: Build self-update package (dry run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$(mktemp -d)"
+          scripts/build-package.sh "$OUT" | tee "$OUT/result.txt"
+          grep -qE '^SHA256=[0-9a-f]{64}$' "$OUT/result.txt"
+          tar -tzf "$OUT"/aspos-agent-*.tar.gz | grep -qE '^\./src/app\.js$'
+
   # ---------------------------------------------------------------------------
   # Job 2: Deploy to AS POS APP SERVER
   # ---------------------------------------------------------------------------
@@ -99,6 +110,21 @@ jobs:
           cp install/windows/install.ps1       dist/windows/install.ps1
           cp install/windows/uninstall.ps1     dist/windows/uninstall.ps1
 
+      # Self-update package (src + production node_modules). Hash is computed
+      # here and published in latest.json; agents refuse a package whose sha256
+      # differs. Fails the workflow if the hash is empty.
+      - name: Build self-update package
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/build-package.sh dist | tee package.env
+          PKG_FILE=$(sed -n 's/^FILE=//p'   package.env)
+          PKG_SHA=$(sed -n 's/^SHA256=//p' package.env)
+          PKG_SIZE=$(sed -n 's/^SIZE=//p'  package.env)
+          [ -n "$PKG_FILE" ] && [ "${#PKG_SHA}" -eq 64 ] && [ -n "$PKG_SIZE" ] \
+            || { echo "ERROR: package file/sha256/size missing"; exit 1; }
+          { echo "PKG_FILE=$PKG_FILE"; echo "PKG_SHA=$PKG_SHA"; echo "PKG_SIZE=$PKG_SIZE"; } >> "$GITHUB_ENV"
+
       - name: Write latest.json
         shell: bash
         run: |
@@ -112,9 +138,18 @@ jobs:
             --arg version    "$VERSION" \
             --arg released_at "$RELEASED_AT" \
             --arg base_url   "$BASE_URL" \
+            --arg pkg_file   "$PKG_FILE" \
+            --arg pkg_sha    "$PKG_SHA" \
+            --argjson pkg_size "$PKG_SIZE" \
             '{
               version:     $version,
               released_at: $released_at,
+              package: {
+                url:    "\($base_url)/\($pkg_file)",
+                sha256: $pkg_sha,
+                size:   $pkg_size,
+                format: "tar.gz"
+              },
               scripts: {
                 "linux":        "\($base_url)/linux/install.sh",
                 "macos":        "\($base_url)/macos/install.sh",
@@ -172,4 +207,11 @@ jobs:
           VER=$(curl -fsSL "https://aspos.io/install/agent/latest.json?t=$(date +%s)" | jq -r .version)
           echo "Live latest.json version=$VER"
           [ "$VER" = "$VERSION" ] || { echo "ERROR: latest.json version '$VER' != package.json '$VERSION'"; exit 1; }
-          echo "OK: live install host matches $VERSION and TENANT_ID contract"
+          # The published package must match the hash advertised in latest.json.
+          LIVE=$(curl -fsSL "https://aspos.io/install/agent/latest.json?t=$(date +%s)")
+          LIVE_URL=$(echo "$LIVE" | jq -r .package.url)
+          LIVE_SHA=$(echo "$LIVE" | jq -r .package.sha256)
+          [ "$LIVE_SHA" = "$PKG_SHA" ] || { echo "ERROR: latest.json package.sha256 '$LIVE_SHA' != built '$PKG_SHA'"; exit 1; }
+          GOT_SHA=$(curl -fsSL "$LIVE_URL" | sha256sum | cut -d' ' -f1)
+          [ "$GOT_SHA" = "$PKG_SHA" ] || { echo "ERROR: live package hash '$GOT_SHA' != '$PKG_SHA'"; exit 1; }
+          echo "OK: live install host matches $VERSION, TENANT_ID contract and package hash"

@@ -14,6 +14,7 @@
 
 import config from './config.js';
 import logger from './logger.js';
+import { version as agentVersion } from './version.js';
 
 const BACKEND_TIMEOUT_MS = 10_000;
 
@@ -108,7 +109,8 @@ export async function channelAuth(socketId, channelName) {
 }
 
 /**
- * Send a heartbeat so the backend knows this agent is still alive.
+ * Send a heartbeat so the backend knows this agent is still alive. The body
+ * and X-Agent-Version header carry the running agent version.
  * Called every 30 s from the main retry interval.
  * Transport failures are silently swallowed — a missed heartbeat is non-fatal.
  * A 410 agent_revoked response triggers graceful shutdown.
@@ -118,7 +120,13 @@ export async function reportHeartbeat() {
     try {
         const res = await fetchWithTimeout(url, {
             method: 'POST',
-            headers: { 'Authorization': authHeader(), 'Accept': 'application/json' },
+            headers: {
+                'Authorization':   authHeader(),
+                'Accept':          'application/json',
+                'Content-Type':    'application/json',
+                'X-Agent-Version': agentVersion,
+            },
+            body: JSON.stringify({ version: agentVersion }),
         });
 
         if (await isRevokedResponse(res)) {

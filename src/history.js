@@ -14,6 +14,8 @@ import logger from './logger.js';
 import { getSqlJs } from './sqljs.js';
 
 const MAX_HISTORY   = 50;
+const PRINTED_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const PRINTED_MAX_ROWS = 5000;
 const SAVE_DEBOUNCE = 5_000;
 
 export class PrintHistory {
@@ -47,6 +49,10 @@ export class PrintHistory {
                 kind         TEXT NOT NULL,
                 payload_json TEXT NOT NULL,
                 printed_at   INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS printed_ids (
+                job_id     TEXT PRIMARY KEY,
+                printed_at INTEGER NOT NULL
             );
         `);
     }
@@ -85,6 +91,39 @@ export class PrintHistory {
         );
         this._scheduleSave();
         logger.debug('history: recorded job', { job_id });
+    }
+
+    /**
+     * Remember that a job (of ANY kind: receipt, KOT, ...) was printed, so a
+     * re-delivery of the same job_id by the backend is never printed twice.
+     * Flushed to disk immediately: this is a safety record, not a convenience.
+     */
+    markPrinted(jobId) {
+        const nowMs = Date.now();
+        this.db.run('INSERT OR REPLACE INTO printed_ids (job_id, printed_at) VALUES (?, ?)', [jobId, nowMs]);
+        this.db.run('DELETE FROM printed_ids WHERE printed_at < ?', [nowMs - PRINTED_TTL_MS]);
+        this.db.run(
+            `DELETE FROM printed_ids WHERE job_id NOT IN (
+                SELECT job_id FROM printed_ids ORDER BY printed_at DESC LIMIT ?
+             )`,
+            [PRINTED_MAX_ROWS]
+        );
+        this._writeToDisk();
+    }
+
+    /** True if this job_id was already printed successfully (printed_ids or print_history). */
+    wasPrinted(jobId) {
+        for (const sql of [
+            'SELECT 1 FROM printed_ids WHERE job_id = ?',
+            'SELECT 1 FROM print_history WHERE job_id = ?',
+        ]) {
+            const stmt = this.db.prepare(sql);
+            stmt.bind([jobId]);
+            const hit = stmt.step();
+            stmt.free();
+            if (hit) return true;
+        }
+        return false;
     }
 
     /**

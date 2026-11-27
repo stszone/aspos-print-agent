@@ -55,14 +55,25 @@ cp "$ROOT/install/raspberry-pi/uninstall.sh" "$STAGE/raspberry-pi/uninstall.sh"
 cp "$ROOT/install/windows/install.ps1"       "$STAGE/windows/install.ps1"
 cp "$ROOT/install/windows/uninstall.ps1"     "$STAGE/windows/uninstall.ps1"
 
+# Self-update package (same builder as the CI deploy job).
+PKG_OUT="$("$ROOT/scripts/build-package.sh" "$STAGE")"
+PKG_FILE="$(echo "$PKG_OUT" | sed -n 's/^FILE=//p')"
+PKG_SHA="$(echo "$PKG_OUT" | sed -n 's/^SHA256=//p')"
+PKG_SIZE="$(echo "$PKG_OUT" | sed -n 's/^SIZE=//p')"
+[ -n "$PKG_FILE" ] && [ "${#PKG_SHA}" -eq 64 ] && [ -n "$PKG_SIZE" ] || die "package build produced no file/sha256/size"
+
 RELEASED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 jq -n \
   --arg version "$VERSION" \
   --arg released_at "$RELEASED_AT" \
   --arg base_url "$BASE_URL" \
+  --arg pkg_file "$PKG_FILE" \
+  --arg pkg_sha "$PKG_SHA" \
+  --argjson pkg_size "$PKG_SIZE" \
   '{
     version: $version,
     released_at: $released_at,
+    package: { url: "\($base_url)/\($pkg_file)", sha256: $pkg_sha, size: $pkg_size, format: "tar.gz" },
     scripts: {
       "linux":        "\($base_url)/linux/install.sh",
       "macos":        "\($base_url)/macos/install.sh",

@@ -125,7 +125,8 @@ ASPOS Cloud Backend
 2. `worker.js` decodes the base64 ESC/POS payload and calls `printer.js`
 3. `printer.js` opens a TCP socket to the printer, sends the bytes, and closes
 4. On success the job is removed from `buffer.js` and the result reported to the backend
-5. On failure `buffer.js` schedules a retry with exponential back-off (up to 30 attempts / 24 h TTL)
+5. A job re-sent by the backend after it already printed is **not printed again**; the agent only re-reports `ok`
+6. On failure `buffer.js` schedules a retry with exponential back-off (up to 30 attempts / 24 h TTL)
 
 ---
 
@@ -174,6 +175,19 @@ Get-Content logs\agent.log -Tail 50 -Wait
 
 ---
 
+## Auto-update
+
+Installed agents keep themselves current. About 2 minutes after start and then every 6 hours the agent reads `latest.json`; if it lists a newer version (never a downgrade) it downloads the release package, checks its SHA-256, unpacks it to `<install dir>/versions/<version>/` and restarts itself into it. The previous version stays on disk.
+
+- **Safe moments only:** nothing is updated while a job is printing or the local buffer holds jobs waiting for a retry; the check simply repeats later. A hash mismatch or any download error aborts and the current version keeps running.
+- **Disable:** set `AUTO_UPDATE=false` in `.env` and restart the service. Change the interval with `UPDATE_CHECK_INTERVAL_HOURS`.
+- **Rollback (automatic):** after an update the new version is *unconfirmed* until it connects to ASPOS (or has stayed up 15 minutes). If it is started 3 times without being confirmed (crash loop), or is still unconfirmed 1 hour after the switch, the next start returns to the previous version and records the bad version in `update-state.json` so it is not retried; a later release is.
+- **Manual rollback / pin:** delete `current.json` (runs the originally installed code) and set `AUTO_UPDATE=false`.
+- **Files** (install dir, git-ignored): `versions/`, `current.json` (active version), `update-state.json`. Re-running the installer (`git pull`) still works; a pointer older than the checked-out code is ignored.
+- **Exit code 75** after an update is what makes systemd (`Restart=on-failure`), WinSW (`onfailure`) and launchd (`KeepAlive`) restart the service.
+
+---
+
 ## Configuration
 
 The agent reads `.env` in the install directory. See [`.env.example`](.env.example) for all options.
@@ -189,6 +203,9 @@ The agent reads `.env` in the install directory. See [`.env.example`](.env.examp
 | `AGENT_TOKEN` | Yes | Agent authentication token |
 | `HEALTH_PORT` | No | Health endpoint port (default `8585`) |
 | `ADMIN_UI_ORIGIN` | No | Trusted CORS origin for `/local-receipts` and `/reprint` (default: derived from `BACKEND_URL`) |
+| `AUTO_UPDATE` | No | `false` disables self-update (default `true`) |
+| `UPDATE_CHECK_INTERVAL_HOURS` | No | How often to check for a new version (default `6`) |
+| `UPDATE_MANIFEST_URL` | No | Release manifest (default `https://aspos.io/install/agent/latest.json`) |
 | `LOG_LEVEL` | No | `error` / `warn` / `info` / `debug` (default `info`) |
 
 ---

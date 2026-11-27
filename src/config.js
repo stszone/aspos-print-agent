@@ -24,6 +24,12 @@ function parseEnvInt(name, rawValue, { min, max } = {}) {
     return n;
 }
 
+function parseBool(name, fallback) {
+    const raw = process.env[name];
+    if (raw === undefined || raw.trim() === '') return fallback;
+    return !['false', '0', 'off', 'no'].includes(raw.trim().toLowerCase());
+}
+
 export default {
     backendUrl:   required('BACKEND_URL').replace(/\/$/, ''),
     reverbAppKey: required('REVERB_APP_KEY'),
@@ -39,4 +45,8 @@ export default {
     agentToken:   required('AGENT_TOKEN'),
     healthPort:   parseEnvInt('HEALTH_PORT',  process.env.HEALTH_PORT  ?? '8585', { min: 1, max: 65535 }),
     logLevel:     process.env.LOG_LEVEL ?? 'info',
+    // Self-update (see README "Auto-update"). AUTO_UPDATE=false disables it.
+    autoUpdate:        parseBool('AUTO_UPDATE', true),
+    updateIntervalMs:  parseEnvInt('UPDATE_CHECK_INTERVAL_HOURS', process.env.UPDATE_CHECK_INTERVAL_HOURS ?? '6', { min: 1, max: 168 }) * 3_600_000,
+    updateManifestUrl: process.env.UPDATE_MANIFEST_URL ?? 'https://aspos.io/install/agent/latest.json',
 };
