@@ -6,16 +6,10 @@
  */
 
 import http     from 'node:http';
-import fs       from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path     from 'node:path';
 import config   from './config.js';
 import logger   from './logger.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const { version } = JSON.parse(
-    fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'),
-);
+import { version } from './version.js';
 
 const trustedOrigin = process.env.ADMIN_UI_ORIGIN ??
     (() => {

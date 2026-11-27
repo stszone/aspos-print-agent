@@ -81,6 +81,11 @@ export class JobBuffer {
         logger.debug('buffer: enqueued job', { job_id: job.job_id });
     }
 
+    /** Number of jobs still waiting to be printed (excludes abandoned ones). */
+    activeCount() {
+        return this._get('SELECT COUNT(*) AS n FROM jobs WHERE abandoned = 0').n;
+    }
+
     /** Remove a successfully printed job. */
     remove(jobId) {
         this.db.run('DELETE FROM jobs WHERE job_id = ?', [jobId]);

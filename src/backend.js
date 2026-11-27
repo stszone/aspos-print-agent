@@ -14,6 +14,7 @@
 
 import config from './config.js';
 import logger from './logger.js';
+import { version as agentVersion } from './version.js';
 
 const BACKEND_TIMEOUT_MS = 10_000;
 
@@ -22,6 +23,14 @@ export class AgentRevokedError extends Error {
         super('Agent has been revoked by the backend');
         this.name = 'AgentRevokedError';
     }
+}
+
+let lastHeartbeatOkAt = 0;
+const REACHABLE_WINDOW_MS = 2 * 60_000;
+
+/** True if a heartbeat got a 2xx recently, i.e. the backend is reachable over HTTPS. */
+export function isBackendReachable(now = Date.now()) {
+    return now - lastHeartbeatOkAt < REACHABLE_WINDOW_MS;
 }
 
 let revokedHandler = null;
@@ -108,7 +117,8 @@ export async function channelAuth(socketId, channelName) {
 }
 
 /**
- * Send a heartbeat so the backend knows this agent is still alive.
+ * Send a heartbeat so the backend knows this agent is still alive. The body
+ * and X-Agent-Version header carry the running agent version.
  * Called every 30 s from the main retry interval.
  * Transport failures are silently swallowed — a missed heartbeat is non-fatal.
  * A 410 agent_revoked response triggers graceful shutdown.
@@ -118,7 +128,13 @@ export async function reportHeartbeat() {
     try {
         const res = await fetchWithTimeout(url, {
             method: 'POST',
-            headers: { 'Authorization': authHeader(), 'Accept': 'application/json' },
+            headers: {
+                'Authorization':   authHeader(),
+                'Accept':          'application/json',
+                'Content-Type':    'application/json',
+                'X-Agent-Version': agentVersion,
+            },
+            body: JSON.stringify({ version: agentVersion }),
         });
 
         if (await isRevokedResponse(res)) {
@@ -128,6 +144,8 @@ export async function reportHeartbeat() {
 
         if (!res.ok) {
             logger.warn('backend: heartbeat rejected', { status: res.status });
+        } else {
+            lastHeartbeatOkAt = Date.now();
         }
     } catch (_) {
         // non-fatal: backend will mark offline after threshold expires

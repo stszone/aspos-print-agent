@@ -50,4 +50,7 @@
     <onfailure action="restart" delay="5 sec"/>
     <onfailure action="restart" delay="10 sec"/>
     <onfailure action="restart" delay="20 sec"/>
+    <!-- Self-update exits with code 75 to be restarted into the new version;
+         reset the failure counter so repeated updates keep restarting. -->
+    <resetfailure>1 hour</resetfailure>
 </service>

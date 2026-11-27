@@ -11,9 +11,12 @@ import logger from './logger.js';
 
 /**
  * @param {object} job - The PrintJobReady event data from Reverb
+ * @param {{onPrinted?: (job: object) => void}} [hooks] onPrinted runs right after the
+ *        printer accepted the bytes, BEFORE the (slow) result report, so a crash while
+ *        reporting cannot cause a duplicate print after restart.
  * @returns {Promise<boolean>}
  */
-export async function processJob(job) {
+export async function processJob(job, { onPrinted } = {}) {
     const { job_id, printer_id, driver, connection, payload_b64 } = job;
 
     logger.info('worker: processing job', { job_id, printer_id, driver });
@@ -49,6 +52,7 @@ export async function processJob(job) {
 
     try {
         await sendToPrinter(connection.host, connection.port, bytes);
+        try { onPrinted?.(job); } catch (err) { logger.warn('worker: onPrinted hook failed', { err: err.message }); }
         logger.info('worker: print sent successfully', { job_id, host: connection.host, port: connection.port });
         await reportResult(job_id, 'ok');
         return true;

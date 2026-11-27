@@ -146,3 +146,9 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Self-update runtime state (see README "Auto-update")
+/versions/
+/current.json
+/update-state.json
+*.tmp

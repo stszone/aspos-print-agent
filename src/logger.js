@@ -6,7 +6,8 @@ import config from './config.js';
 import fs from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const logsDir = path.join(__dirname, '..', 'logs');
+// ASPOS_HOME is set by src/index.js so logs stay in the install dir when running from versions/<x>.
+const logsDir = path.join(process.env.ASPOS_HOME ?? path.join(__dirname, '..'), 'logs');
 
 fs.mkdirSync(logsDir, { recursive: true });
 
