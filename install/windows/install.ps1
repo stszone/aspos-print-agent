@@ -266,7 +266,7 @@ How to fix (elevated PowerShell):
     if (-not (Test-Path $NpmCmd)) {
         throw "[aspos-install] ERROR: npm.cmd not found at $NpmCmd. Verify the Node.js installation alongside $NodeBin."
     }
-    & $NpmCmd ci --omit=dev
+    & $NpmCmd ci --omit=dev --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) { throw "[aspos-install] ERROR: 'npm ci' failed (exit $LASTEXITCODE)." }
 
     # ── 4. .env ───────────────────────────────────────────────────────────────

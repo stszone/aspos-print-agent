@@ -23,6 +23,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Fail the build on any moderate+ advisory in what ships to customers
+      # (the installer runs `npm ci --omit=dev`).
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
       - name: Lint
         run: npm run lint
 
