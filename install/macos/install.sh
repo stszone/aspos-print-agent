@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ASPOS Print Agent — macOS installer
-# Requires: Node.js 22.x (install via https://nodejs.org or `brew install node@22`)
+# Requires: Node.js 24.x (install via https://nodejs.org or `brew install node@24`)
 #
 # Usage:
 #   sudo bash install.sh <AGENT_TOKEN> <AGENT_ID> <TENANT_ID> [BACKEND_URL] [REVERB_APP_KEY] [REVERB_HOST]
@@ -20,7 +20,7 @@ REVERB_HOST="${6:-}"
 INSTALL_DIR="/opt/aspos-agent"
 PLIST_SRC="$INSTALL_DIR/install/macos/com.aspos.agent.plist"
 PLIST_DEST="/Library/LaunchDaemons/com.aspos.agent.plist"
-NODE_MIN_VERSION="22"
+NODE_MIN_VERSION="24"
 SERVICE_USER="aspos-agent"
 HEALTH_URL="http://localhost:8585/health"
 HEALTH_RETRIES=12

@@ -43,6 +43,11 @@ jobs:
             exit 1
           fi
 
+      # package.json engines.node is the one source for the Node major every
+      # installer installs (they drifted to 22 while the code required 24).
+      - name: Guard installers install the engines Node major
+        run: node scripts/check-installer-node-version.mjs
+
       # Keep install script argv in lockstep with aspos PrintAgentController
       # installInstructions (TENANT_ID / -TenantId). Drift here breaks every
       # tenant's paste-from-UI install.
