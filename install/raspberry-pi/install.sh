@@ -73,7 +73,7 @@ else
 fi
 
 cd "$INSTALL_DIR"
-npm ci --omit=dev
+npm ci --omit=dev --no-audit --no-fund
 mkdir -p "$INSTALL_DIR/logs"
 chown -R "$SERVICE_USER": "$INSTALL_DIR"
 
