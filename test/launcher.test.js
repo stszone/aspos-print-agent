@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { jest } from '@jest/globals';
 import {
     prepareStart, writeJsonAtomic, readJson,
-    MAX_UNCONFIRMED_STARTS, MAX_UNCONFIRMED_AGE_MS,
+    MAX_UNCONFIRMED_STARTS, isBadVersion, BAD_VERSION_TTL_MS,
 } from '../src/launcher.js';
 
 let home;
@@ -41,7 +42,7 @@ describe('prepareStart', () => {
     test('confirmed version is never rolled back, whatever the start count', () => {
         writeJsonAtomic(path.join(home, 'current.json'), { version: '1.2.0' });
         writeJsonAtomic(path.join(home, 'update-state.json'), state({ confirmed: true, starts: 99 }));
-        expect(prepareStart({ home, baseVersion: '1.1.0', now: NOW + 5 * MAX_UNCONFIRMED_AGE_MS }).version).toBe('1.2.0');
+        expect(prepareStart({ home, baseVersion: '1.1.0', now: NOW + 10 * 24 * 3_600_000 }).version).toBe('1.2.0');
     });
 
     test('crash loop (unconfirmed, too many starts) rolls back to previous and marks new version bad', () => {
@@ -64,11 +65,31 @@ describe('prepareStart', () => {
         expect(fs.existsSync(path.join(home, 'current.json'))).toBe(false);
     });
 
-    test('unconfirmed for longer than the age limit rolls back even with few starts', () => {
+    test('wall-clock age alone (PC off overnight) never rolls back', () => {
         writeJsonAtomic(path.join(home, 'current.json'), { version: '1.2.0' });
         writeJsonAtomic(path.join(home, 'update-state.json'), state({ starts: 1 }));
-        const r = prepareStart({ home, baseVersion: '1.1.0', now: NOW + MAX_UNCONFIRMED_AGE_MS + 1 });
-        expect(r.rolledBack).toBe(true);
+        const r = prepareStart({ home, baseVersion: '1.1.0', now: NOW + 3 * 24 * 3_600_000 });
+        expect(r.rolledBack).toBe(false);
+        expect(r.version).toBe('1.2.0');
+    });
+
+    test('unwritable state files do not abort start-up: falls back to the base copy', () => {
+        writeJsonAtomic(path.join(home, 'current.json'), { version: '1.2.0' });
+        writeJsonAtomic(path.join(home, 'update-state.json'), state({ starts: 0 }));
+        // A directory squatting on the temp-file name makes every atomic write fail (works as root too).
+        fs.mkdirSync(path.join(home, 'update-state.json.tmp'));
+        const log = jest.fn();
+        const r = prepareStart({ home, baseVersion: '1.1.0', now: NOW, log });
+        expect(r.entry).toBe(path.join(home, 'src', 'app.js'));
+        expect(r.version).toBe('1.1.0');
+        expect(log).toHaveBeenCalledWith(expect.stringContaining('cannot update state files'));
+    });
+
+    test('bad-version entries expire after the TTL', () => {
+        const st = { bad: ['1.2.0'], bad_at: { '1.2.0': NOW } };
+        expect(isBadVersion(st, '1.2.0', NOW + 1000)).toBe(true);
+        expect(isBadVersion(st, '1.2.0', NOW + BAD_VERSION_TTL_MS + 1)).toBe(false);
+        expect(isBadVersion(st, '1.3.0', NOW)).toBe(false);
     });
 
     test('stale pointer older than the clone (installer re-run) is ignored', () => {

@@ -15,16 +15,31 @@ let home;
 beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'updater-test-')); });
 afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
 
-function makeFetch({ version = '1.3.0', tgz = buildTarGz(packageEntries(version)), sha, pkgUrl = PKG_URL, withPackage = true } = {}) {
+function makeFetch({ version = '1.3.0', tgz = buildTarGz(packageEntries(version)), sha, pkgUrl = PKG_URL, withPackage = true, manifestSize, streamed = false } = {}) {
     const digest = sha ?? crypto.createHash('sha256').update(tgz).digest('hex');
     const calls = [];
     const fn = jest.fn(async (url) => {
         calls.push(url);
         if (url === MANIFEST_URL) {
-            const body = { version, scripts: {}, ...(withPackage && { package: { url: pkgUrl, sha256: digest, size: tgz.length } }) };
+            const body = { version, scripts: {}, ...(withPackage && { package: { url: pkgUrl, sha256: digest, size: manifestSize ?? tgz.length } }) };
             return { ok: true, status: 200, json: async () => body };
         }
         if (url === pkgUrl) {
+            if (streamed) {
+                const chunkSize = 1024;
+                let off = 0;
+                const reads = { n: 0, cancelled: false };
+                fn.reads = reads;
+                return { ok: true, status: 200, body: { getReader: () => ({
+                    read: async () => {
+                        reads.n++;
+                        if (off >= tgz.length) return { done: true };
+                        const value = tgz.subarray(off, off + chunkSize); off += chunkSize;
+                        return { done: false, value };
+                    },
+                    cancel: async () => { reads.cancelled = true; },
+                }) } };
+            }
             return { ok: true, status: 200, arrayBuffer: async () => tgz.buffer.slice(tgz.byteOffset, tgz.byteOffset + tgz.byteLength) };
         }
         return { ok: false, status: 404 };
@@ -107,6 +122,46 @@ describe('checkForUpdate', () => {
         expect(f.calls).toEqual([MANIFEST_URL]);
     });
 
+    test('streamed download works and is verified', async () => {
+        const { r } = await run({ fetchImpl: makeFetch({ streamed: true }) });
+        expect(r.status).toBe('updated');
+    });
+
+    test('streamed body larger than the manifest size is aborted while reading (cap enforced)', async () => {
+        const f = makeFetch({ streamed: true, manifestSize: 100 });
+        const { r, restart } = await run({ fetchImpl: f });
+        expect(r.status).toBe('error');
+        expect(r.error).toMatch(/exceeds/);
+        expect(f.reads.cancelled).toBe(true);
+        expect(restart).not.toHaveBeenCalled();
+    });
+
+    test('body smaller than the manifest size is rejected (not just warned)', async () => {
+        const tgz = buildTarGz(packageEntries('1.3.0'));
+        const { r, restart } = await run({ fetchImpl: makeFetch({ tgz, manifestSize: tgz.length + 10 }) });
+        expect(r.status).toBe('error');
+        expect(r.error).toMatch(/size/);
+        expect(restart).not.toHaveBeenCalled();
+    });
+
+    test('manifest package without a size is unusable', async () => {
+        const f = makeFetch();
+        const orig = f.getMockImplementation();
+        f.mockImplementation(async (url) => {
+            const res = await orig(url);
+            if (url === MANIFEST_URL) { const b = await res.json(); delete b.package.size; return { ok: true, json: async () => b }; }
+            return res;
+        });
+        const { r } = await run({ fetchImpl: f });
+        expect(r.status).toBe('no-package');
+    });
+
+    test('a bad version whose TTL expired is retried', async () => {
+        fs.writeFileSync(path.join(home, 'update-state.json'), JSON.stringify({ bad: ['1.3.0'], bad_at: { '1.3.0': 1 } }));
+        const { r } = await run();
+        expect(r.status).toBe('updated');
+    });
+
     test('package from a different host is refused', async () => {
         const { r } = await run({ fetchImpl: makeFetch({ pkgUrl: 'https://evil.test/p.tar.gz' }) });
         expect(r.status).toBe('no-package');
@@ -179,6 +234,36 @@ describe('startHealthConfirmation', () => {
             expect(readJson(path.join(home, 'update-state.json')).confirmed).toBe(false);
             connected = true;
             await jest.advanceTimersByTimeAsync(1000);
+            expect(readJson(path.join(home, 'update-state.json')).confirmed).toBe(true);
+        } finally { jest.useRealTimers(); }
+    });
+
+    test('backend reachable but websocket never connects: NOT confirmed, onUnhealthy fires', async () => {
+        jest.useFakeTimers();
+        try {
+            writeState();
+            const onUnhealthy = jest.fn();
+            startHealthConfirmation({
+                home, runningVersion: '1.3.0', isConnected: () => false, isBackendReachable: () => true,
+                onUnhealthy, pollMs: 1000, stableMs: 5000,
+            });
+            await jest.advanceTimersByTimeAsync(6000);
+            expect(onUnhealthy).toHaveBeenCalledTimes(1);
+            expect(readJson(path.join(home, 'update-state.json')).confirmed).toBe(false);
+        } finally { jest.useRealTimers(); }
+    });
+
+    test('backend unreachable (site internet down): confirmed after the stable period', async () => {
+        jest.useFakeTimers();
+        try {
+            writeState();
+            const onUnhealthy = jest.fn();
+            startHealthConfirmation({
+                home, runningVersion: '1.3.0', isConnected: () => false, isBackendReachable: () => false,
+                onUnhealthy, pollMs: 1000, stableMs: 5000,
+            });
+            await jest.advanceTimersByTimeAsync(6000);
+            expect(onUnhealthy).not.toHaveBeenCalled();
             expect(readJson(path.join(home, 'update-state.json')).confirmed).toBe(true);
         } finally { jest.useRealTimers(); }
     });

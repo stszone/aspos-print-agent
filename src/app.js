@@ -27,7 +27,7 @@ import { PrintHistory }    from './history.js';
 import { AgentConnection } from './connection.js';
 import { startHealthServer } from './health.js';
 import { processJob }      from './worker.js';
-import { reportResult, reportHeartbeat, setRevokedHandler } from './backend.js';
+import { reportResult, reportHeartbeat, setRevokedHandler, isBackendReachable } from './backend.js';
 import { createJobHandler } from './job-handler.js';
 import { startAutoUpdate, startHealthConfirmation } from './updater.js';
 import { version } from './version.js';
@@ -84,6 +84,9 @@ stopConfirm = startHealthConfirmation({
     home,
     runningVersion: version,
     isConnected: () => connection.isConnected,
+    isBackendReachable: () => isBackendReachable(),
+    // Exit non-zero: service manager restarts us; launcher counts the start and rolls back after 3.
+    onUnhealthy: () => shutdown('new version unhealthy (backend reachable, websocket down)', 1),
     log: (level, msg, meta) => logger[level](msg, meta),
 });
 stopUpdater = startAutoUpdate({

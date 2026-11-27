@@ -12,16 +12,21 @@ import logger from './logger.js';
 
 export function createJobHandler({ buffer, history, processJob, reportResult }) {
     let inFlight = 0;
+    // job_ids being processed right now (live delivery, backend re-delivery or retry tick).
+    const active = new Set();
 
     async function track(fn) {
         inFlight++;
         try { return await fn(); } finally { inFlight--; }
     }
 
-    function onPrinted(job) {
+    function markPrinted(job) {
         try { history.markPrinted(job.job_id); } catch (err) {
             logger.warn('history: markPrinted failed (non-fatal)', { err: err.message });
         }
+    }
+
+    function recordHistory(job) {
         if (job.kind === 'receipt' || job.kind === 'reprint') {
             try { history.record(job); } catch (err) {
                 logger.warn('history: record failed (non-fatal)', { err: err.message });
@@ -30,44 +35,68 @@ export function createJobHandler({ buffer, history, processJob, reportResult }) 
     }
 
     /**
+     * Print one job. The printed marker is written the moment the printer
+     * accepted the bytes (before the result report, which can take 10 s), so a
+     * crash in between never reprints after restart.
+     */
+    async function print(job) {
+        let marked = false;
+        const ok = await processJob(job, { onPrinted: (j) => { markPrinted(j); marked = true; } });
+        if (ok) {
+            if (!marked) markPrinted(job);
+            buffer.remove(job.job_id);
+            recordHistory(job);
+        } else {
+            buffer.recordFailure(job.job_id);
+        }
+        return ok;
+    }
+
+    /**
+     * Dedupe contract: the backend creates a NEW job_id (print_jobs uuid) for
+     * every deliberate reprint; only queue retries of the same dispatch reuse
+     * a job_id. So "job_id already printed" always means a duplicate delivery.
+     *
      * @param {object} job
      * @param {{force?: boolean}} [opts] force: operator-initiated local reprint — print even if seen before
      */
     function handle(job, { force = false } = {}) {
         return track(async () => {
-            if (!force && history.wasPrinted(job.job_id)) {
-                logger.info('worker: job already printed — re-reporting ok, not printing again', { job_id: job.job_id });
-                buffer.remove(job.job_id);
-                await reportResult(job.job_id, 'ok');
+            if (active.has(job.job_id)) {
+                logger.info('worker: job already in progress — ignoring duplicate delivery', { job_id: job.job_id });
                 return;
             }
-
-            buffer.enqueue(job);
-            const ok = await processJob(job);
-            if (ok) {
-                buffer.remove(job.job_id);
-                onPrinted(job);
-            } else {
-                buffer.recordFailure(job.job_id);
+            active.add(job.job_id);
+            try {
+                if (!force && history.wasPrinted(job.job_id)) {
+                    logger.info('worker: job already printed — re-reporting ok, not printing again', { job_id: job.job_id });
+                    buffer.remove(job.job_id);
+                    await reportResult(job.job_id, 'ok');
+                    return;
+                }
+                buffer.enqueue(job);
+                await print(job);
+            } finally {
+                active.delete(job.job_id);
             }
         });
     }
 
     async function retryBuffered() {
         for (const job of buffer.dueJobs()) {
-            if (history.wasPrinted(job.job_id)) {
-                // Printed earlier but the row survived (crash between print and delete).
-                buffer.remove(job.job_id);
-                await reportResult(job.job_id, 'ok');
-                continue;
-            }
-            logger.info('retry: attempting buffered job', { job_id: job.job_id });
-            const ok = await track(() => processJob(job));
-            if (ok) {
-                buffer.remove(job.job_id);
-                onPrinted(job);
-            } else {
-                buffer.recordFailure(job.job_id);
+            if (active.has(job.job_id)) continue;
+            active.add(job.job_id);
+            try {
+                if (history.wasPrinted(job.job_id)) {
+                    // Printed earlier but the row survived (crash between print and delete).
+                    buffer.remove(job.job_id);
+                    await reportResult(job.job_id, 'ok');
+                    continue;
+                }
+                logger.info('retry: attempting buffered job', { job_id: job.job_id });
+                await track(() => print(job));
+            } finally {
+                active.delete(job.job_id);
             }
         }
 

@@ -72,7 +72,8 @@ jobs:
           OUT="$(mktemp -d)"
           scripts/build-package.sh "$OUT" | tee "$OUT/result.txt"
           grep -qE '^SHA256=[0-9a-f]{64}$' "$OUT/result.txt"
-          tar -tzf "$OUT"/aspos-agent-*.tar.gz | grep -qE '^\./src/app\.js$'
+          tar -tzf "$OUT"/aspos-agent-*.tar.gz > "$OUT/list.txt"
+          grep -qE '^\./src/app\.js$' "$OUT/list.txt"
 
   # ---------------------------------------------------------------------------
   # Job 2: Deploy to AS POS APP SERVER

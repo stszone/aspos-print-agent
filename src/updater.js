@@ -17,7 +17,7 @@ import path from 'node:path';
 import { isNewer } from './semver.js';
 import { extractTarGz } from './tar.js';
 import {
-    POINTER_FILE, STATE_FILE, readJson, writeJsonAtomic, versionDir,
+    POINTER_FILE, STATE_FILE, readJson, writeJsonAtomic, versionDir, isBadVersion,
 } from './launcher.js';
 
 /** Exit code that makes systemd (on-failure), WinSW (onfailure) and launchd (KeepAlive) restart us. */
@@ -39,6 +39,7 @@ async function fetchJson(fetchImpl, url, timeoutMs) {
 
 function validPackage(pkg, manifestUrl) {
     if (!pkg || typeof pkg.url !== 'string' || !/^[a-f0-9]{64}$/i.test(String(pkg.sha256 ?? ''))) return false;
+    if (!Number.isInteger(pkg.size) || pkg.size <= 0 || pkg.size > MAX_PACKAGE_BYTES) return false;
     let u; let m;
     try { u = new URL(pkg.url); m = new URL(manifestUrl); } catch { return false; }
     // Same host as the manifest, https only (tests may use http via allowInsecure).
@@ -54,14 +55,36 @@ function isPackageDirValid(dir, version) {
     } catch { return false; }
 }
 
-async function downloadVerified(fetchImpl, pkg, log) {
+/** Read the body in chunks, aborting as soon as it exceeds `limit` bytes. */
+async function readLimited(res, limit) {
+    const declared = Number(res.headers?.get?.('content-length'));
+    if (declared > limit) throw new Error(`package too large (content-length ${declared})`);
+    if (!res.body?.getReader) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > limit) throw new Error(`package too large (${buf.length})`);
+        return buf;
+    }
+    const reader = res.body.getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > limit) {
+            try { await reader.cancel(); } catch { /* ignore */ }
+            throw new Error(`package exceeds ${limit} bytes — aborted`);
+        }
+        chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
+}
+
+async function downloadVerified(fetchImpl, pkg) {
     const res = await fetchImpl(pkg.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`download HTTP ${res.status}`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length === 0 || buf.length > MAX_PACKAGE_BYTES) throw new Error(`package size out of range: ${buf.length}`);
-    if (pkg.size !== undefined && Number(pkg.size) !== buf.length) {
-        log('warn', 'updater: package size differs from manifest', { expected: pkg.size, got: buf.length });
-    }
+    const buf = await readLimited(res, pkg.size);
+    if (buf.length !== pkg.size) throw new Error(`package size ${buf.length} != manifest size ${pkg.size}`);
     const actual = crypto.createHash('sha256').update(buf).digest('hex');
     if (actual !== String(pkg.sha256).toLowerCase()) {
         return { ok: false, expected: pkg.sha256, actual };
@@ -109,7 +132,7 @@ export async function checkForUpdate(o) {
         if (!isNewer(latest, currentVersion)) return { status: 'up-to-date', latest };
 
         const state = readJson(path.join(home, STATE_FILE)) ?? {};
-        if ((state.bad ?? []).includes(latest)) {
+        if (isBadVersion(state, latest, now())) {
             log('info', 'updater: latest version previously failed on this device — skipping', { latest });
             return { status: 'skipped-bad', latest };
         }
@@ -124,7 +147,7 @@ export async function checkForUpdate(o) {
 
         const target = versionDir(home, latest);
         if (!isPackageDirValid(target, latest)) {
-            const dl = await downloadVerified(fetchImpl, manifest.package, log);
+            const dl = await downloadVerified(fetchImpl, manifest.package);
             if (!dl.ok) {
                 log('error', 'updater: sha256 mismatch — aborting, keeping current version', { latest, expected: dl.expected, actual: dl.actual });
                 return { status: 'hash-mismatch', latest };
@@ -144,7 +167,7 @@ export async function checkForUpdate(o) {
 
         writeJsonAtomic(path.join(home, STATE_FILE), {
             from: currentVersion, to: latest, switched_at: now(),
-            confirmed: false, starts: 0, bad: state.bad ?? [],
+            confirmed: false, starts: 0, bad: state.bad ?? [], bad_at: state.bad_at ?? {},
         });
         writeJsonAtomic(path.join(home, POINTER_FILE), { version: latest });
         pruneVersions(home, [latest, currentVersion]);
@@ -187,13 +210,17 @@ export function startAutoUpdate(o) {
 
 /**
  * Marks a freshly switched version as healthy once it is connected to the
- * backend, or after it has simply stayed up for 15 minutes (e.g. the site's
- * internet is down — that is not the new version's fault).
+ * backend. If the backend is NOT reachable over HTTPS (site internet down —
+ * not the new version's fault) it is also confirmed after staying up
+ * `stableMs`. If the backend IS reachable (heartbeat 2xx) but the websocket
+ * still has not connected after `stableMs`, the release is suspect: never
+ * confirm it, call onUnhealthy() (the agent exits -> restart -> the launcher
+ * counts the start, and rolls back after MAX_UNCONFIRMED_STARTS).
  * Returns a stop() function, or null if nothing needs confirming.
  */
 export function startHealthConfirmation({
-    home, runningVersion, isConnected, log = noop, now = Date.now,
-    pollMs = HEALTH_POLL_MS, stableMs = STABLE_CONFIRM_MS,
+    home, runningVersion, isConnected, isBackendReachable = () => false, onUnhealthy = noop,
+    log = noop, now = Date.now, pollMs = HEALTH_POLL_MS, stableMs = STABLE_CONFIRM_MS,
 }) {
     const statePath = path.join(home, STATE_FILE);
     const state = readJson(statePath);
@@ -209,8 +236,15 @@ export function startHealthConfirmation({
         }
     };
     const timer = setInterval(() => {
-        if (isConnected()) { clearInterval(timer); confirm('connected'); }
-        else if (now() - startedAt >= stableMs) { clearInterval(timer); confirm('stable'); }
+        if (isConnected()) { clearInterval(timer); confirm('connected'); return; }
+        if (now() - startedAt < stableMs) return;
+        clearInterval(timer);
+        if (isBackendReachable()) {
+            log('error', 'updater: backend reachable but websocket never connected — treating new version as unhealthy', { version: runningVersion });
+            onUnhealthy();
+        } else {
+            confirm('stable-backend-unreachable');
+        }
     }, pollMs);
     timer.unref?.();
     return () => clearInterval(timer);

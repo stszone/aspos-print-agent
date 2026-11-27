@@ -181,9 +181,10 @@ Installed agents keep themselves current. About 2 minutes after start and then e
 
 - **Safe moments only:** nothing is updated while a job is printing or the local buffer holds jobs waiting for a retry; the check simply repeats later. A hash mismatch or any download error aborts and the current version keeps running.
 - **Disable:** set `AUTO_UPDATE=false` in `.env` and restart the service. Change the interval with `UPDATE_CHECK_INTERVAL_HOURS`.
-- **Rollback (automatic):** after an update the new version is *unconfirmed* until it connects to ASPOS (or has stayed up 15 minutes). If it is started 3 times without being confirmed (crash loop), or is still unconfirmed 1 hour after the switch, the next start returns to the previous version and records the bad version in `update-state.json` so it is not retried; a later release is.
+- **Rollback (automatic):** after an update the new version is *unconfirmed* until it connects to ASPOS (or has stayed up 15 minutes while the backend is unreachable, e.g. the site's internet is down; if the backend answers but the websocket never connects, the agent restarts itself so the crash-loop rule applies). If it is started 3 times without being confirmed (crash loop), the next start returns to the previous version and records the bad version in `update-state.json` so it is not retried for 24 hours; a later release is. Wall-clock time (a PC switched off overnight) never triggers a rollback.
 - **Manual rollback / pin:** delete `current.json` (runs the originally installed code) and set `AUTO_UPDATE=false`.
 - **Files** (install dir, git-ignored): `versions/`, `current.json` (active version), `update-state.json`. Re-running the installer (`git pull`) still works; a pointer older than the checked-out code is ignored.
+- **What updates and what does not:** the service entry shim (`src/index.js`, `src/launcher.js`) always comes from the installed clone and only changes when the installer is re-run; everything else (`app.js`, updater, dependencies) updates automatically.
 - **Exit code 75** after an update is what makes systemd (`Restart=on-failure`), WinSW (`onfailure`) and launchd (`KeepAlive`) restart the service.
 
 ---

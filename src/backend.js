@@ -25,6 +25,14 @@ export class AgentRevokedError extends Error {
     }
 }
 
+let lastHeartbeatOkAt = 0;
+const REACHABLE_WINDOW_MS = 2 * 60_000;
+
+/** True if a heartbeat got a 2xx recently, i.e. the backend is reachable over HTTPS. */
+export function isBackendReachable(now = Date.now()) {
+    return now - lastHeartbeatOkAt < REACHABLE_WINDOW_MS;
+}
+
 let revokedHandler = null;
 
 export function setRevokedHandler(fn) {
@@ -136,6 +144,8 @@ export async function reportHeartbeat() {
 
         if (!res.ok) {
             logger.warn('backend: heartbeat rejected', { status: res.status });
+        } else {
+            lastHeartbeatOkAt = Date.now();
         }
     } catch (_) {
         // non-fatal: backend will mark offline after threshold expires

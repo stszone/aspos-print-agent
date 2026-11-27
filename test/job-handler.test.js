@@ -68,6 +68,41 @@ describe('idempotent re-delivery', () => {
     });
 });
 
+describe('concurrent and crash-window safety', () => {
+    test('overlapping deliveries of the same job print once (in-memory in-flight set)', async () => {
+        let release;
+        const gate = new Promise(r => { release = r; });
+        const processJob = jest.fn(() => gate.then(() => true));
+        const jobs = createJobHandler({ buffer, history, processJob, reportResult: jest.fn() });
+        const first = jobs.handle(job('dup'));
+        const second = jobs.handle(job('dup'));      // backend re-delivery during the first print
+        const retry = jobs.retryBuffered();          // 30 s retry tick picks the enqueued row
+        release();
+        await Promise.all([first, second, retry]);
+        expect(processJob).toHaveBeenCalledTimes(1);
+    });
+
+    test('printed marker is written right after the printer accepts, before the result report', async () => {
+        let markedWhenReporting = null;
+        const reportResult = jest.fn(async () => { markedWhenReporting = history.wasPrinted('early'); });
+        const processJob = jest.fn(async (j, hooks) => {
+            hooks.onPrinted(j);            // worker: printer accepted bytes
+            await reportResult(j.job_id, 'ok'); // slow report happens after
+            return true;
+        });
+        const jobs = createJobHandler({ buffer, history, processJob, reportResult });
+        await jobs.handle(job('early'));
+        expect(markedWhenReporting).toBe(true);
+    });
+
+    test('crash during the report (process dies) does not reprint after restart', async () => {
+        const processJob = jest.fn(async (j, hooks) => { hooks.onPrinted(j); throw new Error('killed while reporting'); });
+        const jobs = createJobHandler({ buffer, history, processJob, reportResult: jest.fn() });
+        await expect(jobs.handle(job('crash'))).rejects.toThrow();
+        expect(history.wasPrinted('crash')).toBe(true);
+    });
+});
+
 describe('isBusy (used by the self-updater)', () => {
     test('true while buffered jobs wait, false when idle', async () => {
         const { jobs } = make(false);
